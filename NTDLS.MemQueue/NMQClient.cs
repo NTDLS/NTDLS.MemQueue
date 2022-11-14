@@ -18,11 +18,13 @@ namespace NTDLS.MemQueue
         /// User data, use as you will.
         /// </summary>
         public object Tag { get; set; }
+        public int TCPSendQueueDepth { get; private set; }
+        public Guid ClientId { get; private set; } = Guid.NewGuid();
+
 
         #region Backend Variables.
 
-        public Guid ClientId { get; private set; } = Guid.NewGuid();
-
+        private Dictionary<string, NMQWaitEvent> _ackWaitEvents = new Dictionary<string, NMQWaitEvent>();
         private bool _continueRunning = false;
         private Socket _connectSocket;
         private AsyncCallback _onDataReceivedCallback;
@@ -237,6 +239,38 @@ namespace NTDLS.MemQueue
 
         #region Socket Client.
 
+        private void SendAsync(Socket socket, byte[] data)
+        {
+            try
+            {
+                TCPSendQueueDepth++;
+                socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                Thread.Sleep(1); //This is for everyones wellbeing, only on the client though.
+            }
+            catch (Exception ex)
+            {
+                LogException(ex);
+            }
+        }
+
+        private void SendCallback(IAsyncResult ar)
+        {
+            try
+            {
+                Socket socket = (Socket)ar.AsyncState;
+                if (ar.IsCompleted && socket.Connected == true)
+                {
+                    int bytesSent = socket.EndSend(ar);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogException(ex);
+            }
+
+            TCPSendQueueDepth--;
+        }
+
         private void CloseSocket(bool attemptReconnect)
         {
             try
@@ -287,7 +321,6 @@ namespace NTDLS.MemQueue
 
         private void ReconnectThread(object data)
         {
-
             if (Monitor.TryEnter(_reconnectThreadLock))
             {
                 try
@@ -339,7 +372,7 @@ namespace NTDLS.MemQueue
                 //Discard.
             }
 
-            peer.Socket.BeginReceive(peer.Buffer, 0, peer.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
+            peer.Socket.BeginReceive(peer.Packet.Buffer, 0, peer.Packet.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
         }
 
         private void OnDataReceived(IAsyncResult asyn)
@@ -349,15 +382,15 @@ namespace NTDLS.MemQueue
             {
                 Peer peer = (Peer)asyn.AsyncState;
                 socket = peer.Socket;
-                peer.BytesReceived = peer.Socket.EndReceive(asyn);
+                peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
 
-                if (peer.BytesReceived == 0)
+                if (peer.Packet.BufferLength == 0)
                 {
                     CloseSocket(true);
                     return;
                 }
 
-                Packetizer.DissasemblePacketData(this, peer, PacketPayloadHandler);
+                Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
 
                 WaitForData(peer);
             }
@@ -379,7 +412,10 @@ namespace NTDLS.MemQueue
 
         #endregion
 
+
         #region Commands.
+
+        //SemaphoreSlim throttler = new SemaphoreSlim(initialCount: 10);
 
         /// <summary>
         /// Asynchronously enqueues a query and returns the reply. The query is broadcast to all queue subscribers.
@@ -418,17 +454,24 @@ namespace NTDLS.MemQueue
                     IsQuery = true
                 };
 
-                this.EnqueueEx(
-                        new NMQCommand()
-                        {
-                            Message = queueItem,
-                            CommandType = PayloadCommandType.Enqueue
-                        }
-                    );
-                await Task.Run(() =>
+                try
                 {
-                    querySubscription.PayloadReceivedEvent.WaitOne(timeout);
-                });
+                    this.EnqueueEx(
+                            new NMQCommand()
+                            {
+                                Message = queueItem,
+                                CommandType = PayloadCommandType.Enqueue
+                            }
+                        );
+                    await Task.Run(() =>
+                    {
+                        querySubscription.PayloadReceivedEvent.WaitOne(timeout);
+                    });
+                }
+                finally
+                {
+                    //throttler.Release();
+                }
 
                 lock (messageQuerySubscriptions)
                 {
@@ -635,8 +678,6 @@ namespace NTDLS.MemQueue
                 );
         }
 
-        volatile int waitingToSend = 0;
-
         /// <summary>
         /// Private low-level enqueue method.
         /// </summary>
@@ -653,10 +694,23 @@ namespace NTDLS.MemQueue
 
             try
             {
-                waitingToSend++;
-                _connectSocket.Send(messagePacket);
-                waitingToSend--;
+                //Create wait even and wait for ACK.
+                NMQWaitEvent waitEvent = null;
+                //We dont wait on replies because we seem to deadlock if we do.
+                waitEvent = new NMQWaitEvent(payload.Message.MessageId);
+
+                lock (_ackWaitEvents) _ackWaitEvents.Add($"{waitEvent.MessageId}", waitEvent);
+
+                SendAsync(_connectSocket, messagePacket);
                 OnEnqueued?.Invoke(this, payload.Message);
+
+                if (payload.Message.IsReply == false)
+                {
+                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                    {
+                        lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
+                    }
+                }
             }
             catch (SocketException)
             {
@@ -777,11 +831,24 @@ namespace NTDLS.MemQueue
             }
         }
 
-        private void PacketPayloadHandler(Peer peer, NMQCommand payload)
+        private void PacketPayloadHandler(Peer peer, Packet packet, NMQCommand payload)
         {
             try
             {
-                if (payload.Message.IsQuery)
+                if (payload.CommandType == PayloadCommandType.CommandAck)
+                {
+                    var key = $"{payload.Message.MessageId}";
+                    if (_ackWaitEvents.ContainsKey(key))
+                    {
+                        _ackWaitEvents[key].Set();
+                        lock (_ackWaitEvents) _ackWaitEvents.Remove(key);
+                    }
+                    else
+                    {
+                        //Server... what are you ack'ing?
+                    }
+                }
+                else if (payload.Message.IsQuery)
                 {
                     OnQueryReceived?.Invoke(this, payload.Message.As<NMQQuery>());
                 }
@@ -816,6 +883,25 @@ namespace NTDLS.MemQueue
                         messageQuerySubscription.PayloadProcessedEvent.WaitOne();
                     }
                 }
+
+                #region It doesnt hurt to sent an ACK for each message.
+                if (payload.CommandType != PayloadCommandType.CommandAck)
+                {
+                    var ackPayload = new NMQCommand()
+                    {
+                        Message = new NMQMessageBase
+                        {
+                            ClientId = payload.Message.ClientId,
+                            MessageId = payload.Message.MessageId,
+                            QueueName = payload.Message.QueueName
+                        },
+                        CommandType = PayloadCommandType.CommandAck
+                    };
+
+                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, ackPayload);
+                    SendAsync(peer.Socket, messagePacket);
+                }
+                #endregion
 
             }
             catch (SocketException)

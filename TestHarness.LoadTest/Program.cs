@@ -20,32 +20,44 @@ namespace TestHarness.LoadTest
 
             client.Subscribe("TestQueue"); //We have to subscribe to a queue, otherwise we wont receive anything.
 
+            int messagesSent = 0;
+            int messagesReceived = 0;
+
             while (true)
             {
                 try
                 {
                     var query = new NMQQuery("TestQueue", "Ping");
-                    Console.WriteLine($"QUERY-SEND: Message: {query.Message}");
+                    //Console.WriteLine($"QUERY-SEND: Message: {query.Message}");
+
+                    messagesSent++;
 
                     client.QueryAsync(query).ContinueWith((t) => //This enqueues a query that expects a reply:
                     {
                         if (t.Status == TaskStatus.RanToCompletion && t.Result != null)
                         {
-                            Console.WriteLine($"REPLY-RECV: Message: {t.Result.Message}");
+                            messagesReceived++;
+                            //Console.WriteLine($"REPLY-RECV: Message: {t.Result.Message}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Something went wrong, failed to send.");
                         }
                     });
 
                     //This simply enqueues a one way message, no reply expected.
 
-                    //var message = new NMQMessage("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
+                    var message = new NMQMessage("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
                     //Console.WriteLine($"MSG-SEND: Message: {message.Message}");
-                    //client.Enqueue(message);
+                    client.Enqueue(message);
 
-                    System.Threading.Thread.Sleep(10);
+                    //System.Threading.Thread.Sleep(1);
                 }
                 catch
                 {
                 }
+
+                Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, TCPDepth: {client.TCPSendQueueDepth}   \r");
             }
         }
 
@@ -74,7 +86,7 @@ namespace TestHarness.LoadTest
         //If we receive a message, just display it.
         private static void Client_OnMessageReceived(NMQClient sender, NMQMessage message)
         {
-            Console.WriteLine($"MSG-RECV: {message.Message}");
+            //Console.WriteLine($"MSG-RECV: {message.Message}");
         }
     }
 }

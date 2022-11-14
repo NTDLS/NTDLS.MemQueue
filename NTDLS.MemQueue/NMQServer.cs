@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NTDLS.MemQueue
 {
@@ -33,8 +34,11 @@ namespace NTDLS.MemQueue
         /// </summary>
         public bool BroadcastMessagesAsReceived { get; set; } = true;
 
+        public int TCPSendQueueDepth { get; private set; }
+
         #region Backend Variables.
 
+        private Dictionary<string, NMQACKEvent> _ackEvents = new Dictionary<string, NMQACKEvent>();
         private bool _continueRunning = false;
         private readonly int _listenBacklog = NMQConstants.DEFAULT_TCPIP_LISTEN_SIZE;
         private Socket _listenSocket;
@@ -219,6 +223,37 @@ namespace NTDLS.MemQueue
 
         #region Socket server.
 
+        private void SendAsync(Socket socket, byte[] data)
+        {
+            try
+            {
+                TCPSendQueueDepth++;
+                socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+            }
+            catch (Exception ex)
+            {
+                LogException(ex);
+            }
+        }
+
+        private void SendCallback(IAsyncResult ar)
+        {
+            try
+            {
+                Socket socket = (Socket)ar.AsyncState;
+                if (ar.IsCompleted && socket.Connected == true)
+                {
+                    int bytesSent = socket.EndSend(ar);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogException(ex);
+            }
+
+            TCPSendQueueDepth--;
+        }
+
         private void BroadcastThread()
         {
             //Messaes are broadcast as they are received - but there are instances where we only have sender
@@ -273,7 +308,7 @@ namespace NTDLS.MemQueue
                 _onDataReceivedCallback = new AsyncCallback(OnDataReceived);
             }
 
-            peer.Socket.BeginReceive(peer.Buffer, 0, peer.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
+            peer.Socket.BeginReceive(peer.Packet.Buffer, 0, peer.Packet.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
         }
 
         private void OnDataReceived(IAsyncResult asyn)
@@ -286,15 +321,15 @@ namespace NTDLS.MemQueue
 
                 socket = peer.Socket;
 
-                peer.BytesReceived = peer.Socket.EndReceive(asyn);
+                peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
 
-                if (peer.BytesReceived == 0)
+                if (peer.Packet.BufferLength == 0)
                 {
                     CleanupConnection(peer.Socket);
                     return;
                 }
 
-                Packetizer.DissasemblePacketData(this, peer, CommandHandler);
+                Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
 
                 if (BroadcastMessagesAsReceived)
                 {
@@ -402,10 +437,9 @@ namespace NTDLS.MemQueue
                     {
                         if (StaleItemExpirationSeconds > 0)
                         {
-                            //queue.Value.RemoveAll(o => o.CreatedTime < staleTime);
+                            queue.Value.RemoveAll(o => o.CreatedTime < staleTime);
                         }
-
-                        //queue.Value.RemoveAll(o => now > o.ExpireTime);
+                        queue.Value.RemoveAll(o => now > o.ExpireTime);
                     }
 
                     var erroredSockets = new List<Socket>();
@@ -476,10 +510,12 @@ namespace NTDLS.MemQueue
                                             continue; //Skip sending to this client.
                                         }
 
-                                        //socket.SendAsync(messagePacket, SocketFlags.None);
-                                        socket.Send(messagePacket, SocketFlags.None);
+                                        //Create an ACK event so we can track whether this message was received.
+                                        NMQACKEvent ackEvent = new NMQACKEvent(payload.Message.MessageId);
+                                        lock (_ackEvents) _ackEvents.Add($"{ackEvent.MessageId}", ackEvent);
 
-                                        //socket.Send(messagePacket);
+                                        SendAsync(socket, messagePacket);
+
                                         messagesSent++;
                                     }
                                 }
@@ -523,7 +559,7 @@ namespace NTDLS.MemQueue
             }
         }
 
-        private void CommandHandler(Peer peer, NMQCommand payload)
+        private void PacketPayloadHandler(Peer peer, Packet packet, NMQCommand payload)
         {
             try
             {
@@ -535,8 +571,19 @@ namespace NTDLS.MemQueue
                 {
                     return;
                 }
-
-                if (payload.CommandType == PayloadCommandType.Enqueue)
+                if (payload.CommandType == PayloadCommandType.CommandAck)
+                {
+                    var key = $"{payload.Message.MessageId}";
+                    if (_ackEvents.ContainsKey(key))
+                    {
+                        lock (_ackEvents) _ackEvents.Remove(key);
+                    }
+                    else
+                    {
+                        //Client... what are you ack'ing?
+                    }
+                }
+                else if (payload.CommandType == PayloadCommandType.Enqueue)
                 {
                     if (_queues.ContainsKey(payload.Message.QueueName) == false)
                     {
@@ -586,6 +633,26 @@ namespace NTDLS.MemQueue
                 {
                     throw new Exception("Command type is not implemented.");
                 }
+
+                #region It doesnt hurt to sent an ACK for each message.
+                if (payload.CommandType != PayloadCommandType.CommandAck)
+                {
+                    var ackPayload = new NMQCommand()
+                    {
+                        Message = new NMQMessageBase
+                        {
+                            ClientId = payload.Message.ClientId,
+                            MessageId = payload.Message.MessageId,
+                            QueueName = payload.Message.QueueName
+                        },
+                        CommandType = PayloadCommandType.CommandAck
+                    };
+
+                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, ackPayload);
+                    SendAsync(peer.Socket, messagePacket);
+                }
+
+                #endregion
             }
             catch (Exception ex)
             {

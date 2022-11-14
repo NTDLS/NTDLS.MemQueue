@@ -1,0 +1,14 @@
+
+.vs/
+
+NTDLS.MemQueue/bin/
+
+NTDLS.MemQueue/obj/
+
+TestHarness.Chat/bin/
+
+TestHarness.Chat/obj/
+
+TestHarness.Server/bin/
+
+TestHarness.Server/obj/

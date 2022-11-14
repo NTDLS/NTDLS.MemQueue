@@ -9,11 +9,7 @@ namespace NTDLS.MemQueue.Library
             Socket = socket;
         }
 
-        public bool Disconnected = false;
-        public int BytesReceived;
         public Socket Socket;
-        public byte[] Buffer = new byte[NMQConstants.DEFAULT_BUFFER_SIZE];
-        public byte[] PayloadBuilder = new byte[NMQConstants.DEFAULT_BUFFER_SIZE];
-        public int PayloadBuilderLength = 0;
+        public Packet Packet { get; set; } = new Packet();
     }
 }

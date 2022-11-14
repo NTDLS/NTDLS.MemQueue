@@ -6,7 +6,7 @@ namespace NTDLS.MemQueue.Library
 {
     internal static class Packetizer
     {
-        public delegate void ProcessPayloadCallback(Peer packet, NMQCommand payload);
+        public delegate void ProcessPayloadCallback(Peer peer, Packet packet, NMQCommand payload);
 
         public static byte[] AssembleMessagePacket(NMQBase q, NMQCommand payload)
         {
@@ -14,14 +14,14 @@ namespace NTDLS.MemQueue.Library
             {
                 var payloadBody = Serialization.ObjectToByteArray(payload);
                 var payloadBytes = Compress(payloadBody);
-                var grossPacketSize = payloadBytes.Length + NMQConstants.PAYLOAD_HEADEER_SIZE;
+                var grossPacketSize = payloadBytes.Length + NMQConstants.PAYLOAD_HEADER_SIZE;
                 var packetBytes = new byte[grossPacketSize];
                 var payloadCrc = CRC16.ComputeChecksum(payloadBytes);
 
                 Buffer.BlockCopy(BitConverter.GetBytes(NMQConstants.PAYLOAD_DELIMITER), 0, packetBytes, 0, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(grossPacketSize), 0, packetBytes, 4, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(payloadCrc), 0, packetBytes, 8, 2);
-                Buffer.BlockCopy(payloadBytes, 0, packetBytes, NMQConstants.PAYLOAD_HEADEER_SIZE, payloadBytes.Length);
+                Buffer.BlockCopy(payloadBytes, 0, packetBytes, NMQConstants.PAYLOAD_HEADER_SIZE, payloadBytes.Length);
 
                 return packetBytes;
             }
@@ -33,7 +33,7 @@ namespace NTDLS.MemQueue.Library
             return null;
         }
 
-        private static void SkipPacket(NMQBase q, ref Peer packet)
+        private static void SkipPacket(NMQBase q, ref Packet packet)
         {
             try
             {
@@ -61,20 +61,20 @@ namespace NTDLS.MemQueue.Library
             }
         }
 
-        public static void DissasemblePacketData(NMQBase q, Peer packet, ProcessPayloadCallback processPayload)
+        public static void DissasemblePacketData(NMQBase q, Peer peer, Packet packet, ProcessPayloadCallback processPayload)
         {
             try
             {
-                if (packet.PayloadBuilderLength + packet.BytesReceived >= packet.PayloadBuilder.Length)
+                if (packet.PayloadBuilderLength + packet.BufferLength >= packet.PayloadBuilder.Length)
                 {
-                    Array.Resize(ref packet.PayloadBuilder, packet.PayloadBuilderLength + packet.BytesReceived);
+                    Array.Resize(ref packet.PayloadBuilder, packet.PayloadBuilderLength + packet.BufferLength);
                 }
 
-                Buffer.BlockCopy(packet.Buffer, 0, packet.PayloadBuilder, packet.PayloadBuilderLength, packet.BytesReceived);
+                Buffer.BlockCopy(packet.Buffer, 0, packet.PayloadBuilder, packet.PayloadBuilderLength, packet.BufferLength);
 
-                packet.PayloadBuilderLength = packet.PayloadBuilderLength + packet.BytesReceived;
+                packet.PayloadBuilderLength = packet.PayloadBuilderLength + packet.BufferLength;
 
-                while (packet.PayloadBuilderLength > NMQConstants.PAYLOAD_HEADEER_SIZE) //[PayloadSize] and [CRC16]
+                while (packet.PayloadBuilderLength > NMQConstants.PAYLOAD_HEADER_SIZE) //[PayloadSize] and [CRC16]
                 {
                     var payloadDelimiterBytes = new byte[4];
                     var payloadSizeBytes = new byte[4];
@@ -109,7 +109,7 @@ namespace NTDLS.MemQueue.Library
                         break;
                     }
 
-                    var actualCRC16 = CRC16.ComputeChecksum(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADEER_SIZE, grossPayloadSize - NMQConstants.PAYLOAD_HEADEER_SIZE);
+                    var actualCRC16 = CRC16.ComputeChecksum(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADER_SIZE, grossPayloadSize - NMQConstants.PAYLOAD_HEADER_SIZE);
 
                     if (actualCRC16 != expectedCRC16)
                     {
@@ -118,16 +118,16 @@ namespace NTDLS.MemQueue.Library
                         continue;
                     }
 
-                    var netPayloadSize = grossPayloadSize - NMQConstants.PAYLOAD_HEADEER_SIZE;
+                    var netPayloadSize = grossPayloadSize - NMQConstants.PAYLOAD_HEADER_SIZE;
                     var payloadBytes = new byte[netPayloadSize];
 
-                    Buffer.BlockCopy(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADEER_SIZE, payloadBytes, 0, netPayloadSize);
+                    Buffer.BlockCopy(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADER_SIZE, payloadBytes, 0, netPayloadSize);
 
                     var payloadBody = Decompress(payloadBytes);
 
                     NMQCommand payload = (NMQCommand)Serialization.ByteArrayToObject(payloadBody);
 
-                    processPayload(packet, payload);
+                    processPayload(peer, packet, payload);
 
                     //Zero out the consumed portion of the payload buffer - more for fun than anything else.
                     Array.Clear(packet.PayloadBuilder, 0, grossPayloadSize);

@@ -16,9 +16,9 @@ namespace TestHarness.Server
             };
 
             //These events are 100% unnecessary, just wanted to show some status text.
-            //server.OnExceptionOccured += Server_OnExceptionOccured;
-            //server.OnBeforeMessageReceive += Server_OnBeforeCommandReceive;
-            //server.OnBeforeMessageSend += Server_OnBeforeCommandSend;
+            server.OnExceptionOccured += Server_OnExceptionOccured;
+            server.OnBeforeMessageReceive += Server_OnBeforeCommandReceive;
+            server.OnBeforeMessageSend += Server_OnBeforeCommandSend;
 
             server.Start();
 
@@ -29,14 +29,14 @@ namespace TestHarness.Server
         private static PayloadSendAction Server_OnBeforeCommandSend(NMQServer sender, NMQMessageBase message)
         {
             messagesSent++;
-            Console.Write($"Received: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}   \r");
+            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}   \r");
             return PayloadSendAction.Process;
         }
 
         private static PayloadReceiveAction Server_OnBeforeCommandReceive(NMQServer sender, NMQMessageBase message)
         {
             messagesReceived++;
-            Console.Write($"Received: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}   \r");
+            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}   \r");
             return PayloadReceiveAction.Process;
         }
 
