@@ -29,14 +29,14 @@ namespace TestHarness.Server
         private static PayloadSendAction Server_OnBeforeCommandSend(NMQServer sender, NMQMessageBase message)
         {
             messagesSent++;
-            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}   \r");
+            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, QDepth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}, O:{sender.OutstandingAcknowledgments}, U:{sender.UnacknowledgedCommands}   \r");
             return PayloadSendAction.Process;
         }
 
         private static PayloadReceiveAction Server_OnBeforeCommandReceive(NMQServer sender, NMQMessageBase message)
         {
             messagesReceived++;
-            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, Depth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}   \r");
+            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, QDepth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}, O:{sender.OutstandingAcknowledgments}, U:{sender.UnacknowledgedCommands}   \r");
             return PayloadReceiveAction.Process;
         }
 

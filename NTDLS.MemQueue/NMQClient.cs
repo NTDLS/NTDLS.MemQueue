@@ -20,7 +20,19 @@ namespace NTDLS.MemQueue
         public object Tag { get; set; }
         public int TCPSendQueueDepth { get; private set; }
         public Guid ClientId { get; private set; } = Guid.NewGuid();
+        public int UnacknowledgedCommands { get; set; }
 
+        /// <summary>
+        /// The number mesages send that the server has yet to receive an acknowledgment to.
+        /// </summary>
+        public int OutstandingAcknowledgments
+        {
+            get
+            {
+                lock (_ackWaitEvents)
+                    return _ackWaitEvents.Count();
+            }
+        }
 
         #region Backend Variables.
 
@@ -31,7 +43,7 @@ namespace NTDLS.MemQueue
         private IPAddress _serverIpAddress;
         private int _serverPort;
         private List<string> _subscribedQueues = new List<string>();
-        private object _reconnectThreadLock = new object();
+        private object _monitorThreadLock = new object();
         private List<NMQQuerySubscription> messageQuerySubscriptions = new List<NMQQuerySubscription>();
 
         #endregion
@@ -76,7 +88,7 @@ namespace NTDLS.MemQueue
         /// Notify when the client disconnects from the server.
         /// </summary>
         public event DisconnectedEvent OnDisconnected;
-        public delegate void DisconnectedEvent(NMQClient sender, bool willRetry);
+        public delegate void DisconnectedEvent(NMQClient sender);
 
         /// <summary>
         /// Notify when an item is enqueued by this client.
@@ -177,24 +189,14 @@ namespace NTDLS.MemQueue
         /// Connect to the server.
         /// </summary>
         /// <param name="hostName">Host or IP address of queue server.</param>
-        /// <param name="retryInBackground">If false, the client will not retry to connect if the connection fails.</param>
-        /// <returns></returns>
-        public bool Connect(IPAddress ipAddress, bool retryInBackground)
-        {
-            return Connect(ipAddress, NMQConstants.DEFAULT_PORT, retryInBackground);
-        }
-
-        /// <summary>
-        /// Connect to the server.
-        /// </summary>
-        /// <param name="hostName">Host or IP address of queue server.</param>
         /// <param name="port">Port number of queue server.</param>
         /// <param name="retryInBackground">If false, the client will not retry to connect if the connection fails.</param>
         /// <returns></returns>
-        public bool Connect(IPAddress ipAddress, int port, bool retryInBackground)
+        private bool Connect(IPAddress ipAddress, int port, bool startMonitorThread)
         {
-            _continueRunning = true;
+            bool result = false;
 
+            _continueRunning = true;
             _serverIpAddress = ipAddress;
             _serverPort = port;
 
@@ -206,10 +208,8 @@ namespace NTDLS.MemQueue
                 if (_connectSocket != null && _connectSocket.Connected)
                 {
                     WaitForData(new Peer(_connectSocket));
-
                     OnConnected?.Invoke();
-
-                    return true;
+                    result = true;
                 }
             }
             catch
@@ -218,12 +218,12 @@ namespace NTDLS.MemQueue
                 _connectSocket = null;
             }
 
-            if (retryInBackground)
+            if (startMonitorThread)
             {
-                new Thread(ReconnectThread).Start();
+                new Thread(MonitorThreadProc).Start();
             }
 
-            return false;
+            return result;
         }
 
         /// <summary>
@@ -232,7 +232,7 @@ namespace NTDLS.MemQueue
         public void Disconnect()
         {
             _continueRunning = false;
-            CloseSocket(false);
+            CloseSocket();
         }
 
         #endregion
@@ -271,13 +271,13 @@ namespace NTDLS.MemQueue
             TCPSendQueueDepth--;
         }
 
-        private void CloseSocket(bool attemptReconnect)
+        private void CloseSocket()
         {
             try
             {
                 if (_connectSocket != null)
                 {
-                    OnDisconnected?.Invoke(this, attemptReconnect);
+                    OnDisconnected?.Invoke(this);
 
                     try
                     {
@@ -312,16 +312,11 @@ namespace NTDLS.MemQueue
             }
 
             _connectSocket = null;
-
-            if (attemptReconnect && _continueRunning)
-            {
-                new Thread(ReconnectThread).Start();
-            }
         }
 
-        private void ReconnectThread(object data)
+        private void MonitorThreadProc(object data)
         {
-            if (Monitor.TryEnter(_reconnectThreadLock))
+            if (Monitor.TryEnter(_monitorThreadLock))
             {
                 try
                 {
@@ -329,20 +324,33 @@ namespace NTDLS.MemQueue
                     {
                         try
                         {
-                            if (Connect(_serverIpAddress, _serverPort, false))
+                            DateTime askStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
+                            lock (_ackWaitEvents)
                             {
-                                foreach (string queueName in _subscribedQueues)
+                                var ackKeys = _ackWaitEvents.Where(o => o.Value.CreatedDate < askStaleTime).Select(o => o.Key);
+                                foreach (var key in ackKeys)
                                 {
-                                    Subscribe(queueName);
+                                    UnacknowledgedCommands++;
+                                    _ackWaitEvents.Remove(key);
                                 }
-
-                                break;
                             }
                         }
-                        catch
+                        catch {/*Discard*/}
+
+                        try
                         {
-                            //Discard.
+                            if (_connectSocket == null || _connectSocket.Connected == false)
+                            {
+                                if (Connect(_serverIpAddress, _serverPort, false))
+                                {
+                                    foreach (string queueName in _subscribedQueues)
+                                    {
+                                        Subscribe(queueName);
+                                    }
+                                }
+                            }
                         }
+                        catch {/*Discard*/}
 
                         Thread.Sleep(1000);
                     }
@@ -353,7 +361,7 @@ namespace NTDLS.MemQueue
                 }
                 finally
                 {
-                    Monitor.Exit(_reconnectThreadLock);
+                    Monitor.Exit(_monitorThreadLock);
                 }
             }
         }
@@ -386,7 +394,7 @@ namespace NTDLS.MemQueue
 
                 if (peer.Packet.BufferLength == 0)
                 {
-                    CloseSocket(true);
+                    CloseSocket();
                     return;
                 }
 
@@ -396,12 +404,12 @@ namespace NTDLS.MemQueue
             }
             catch (ObjectDisposedException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (Exception ex)
@@ -412,10 +420,7 @@ namespace NTDLS.MemQueue
 
         #endregion
 
-
         #region Commands.
-
-        //SemaphoreSlim throttler = new SemaphoreSlim(initialCount: 10);
 
         /// <summary>
         /// Asynchronously enqueues a query and returns the reply. The query is broadcast to all queue subscribers.
@@ -454,24 +459,17 @@ namespace NTDLS.MemQueue
                     IsQuery = true
                 };
 
-                try
+                EnqueueEx(
+                        new NMQCommand()
+                        {
+                            Message = queueItem,
+                            CommandType = PayloadCommandType.Enqueue
+                        }
+                    );
+                await Task.Run(() =>
                 {
-                    this.EnqueueEx(
-                            new NMQCommand()
-                            {
-                                Message = queueItem,
-                                CommandType = PayloadCommandType.Enqueue
-                            }
-                        );
-                    await Task.Run(() =>
-                    {
-                        querySubscription.PayloadReceivedEvent.WaitOne(timeout);
-                    });
-                }
-                finally
-                {
-                    //throttler.Release();
-                }
+                    querySubscription.PayloadReceivedEvent.WaitOne(timeout);
+                });
 
                 lock (messageQuerySubscriptions)
                 {
@@ -538,7 +536,7 @@ namespace NTDLS.MemQueue
                     IsQuery = true,
                 };
 
-                this.EnqueueEx(
+                EnqueueEx(
                         new NMQCommand()
                         {
                             Message = queueItem,
@@ -593,7 +591,7 @@ namespace NTDLS.MemQueue
                     InReplyToMessageId = query.MessageId
                 };
 
-                this.EnqueueEx(
+                EnqueueEx(
                     new NMQCommand()
                     {
                         Message = queueItem,
@@ -635,7 +633,7 @@ namespace NTDLS.MemQueue
                     InReplyToMessageId = query.MessageId
                 };
 
-                this.EnqueueEx(
+                EnqueueEx(
                     new NMQCommand()
                     {
                         Message = queueItem,
@@ -714,7 +712,7 @@ namespace NTDLS.MemQueue
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return false;
             }
             catch (Exception ex)
@@ -754,7 +752,7 @@ namespace NTDLS.MemQueue
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (Exception ex)
@@ -789,7 +787,7 @@ namespace NTDLS.MemQueue
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (Exception ex)
@@ -822,7 +820,7 @@ namespace NTDLS.MemQueue
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (Exception ex)
@@ -906,7 +904,7 @@ namespace NTDLS.MemQueue
             }
             catch (SocketException)
             {
-                CloseSocket(true);
+                CloseSocket();
                 return;
             }
             catch (Exception ex)

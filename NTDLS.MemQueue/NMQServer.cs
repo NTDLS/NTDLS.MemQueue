@@ -24,6 +24,8 @@ namespace NTDLS.MemQueue
         /// </summary>
         public object ListenPort { get; private set; }
 
+        public int UnacknowledgedCommands { get; private set; }
+
         /// <summary>
         /// The number of seconds to allow an item to remain in the queue after being added. 0 = infinite.
         /// </summary>
@@ -44,7 +46,7 @@ namespace NTDLS.MemQueue
         private Socket _listenSocket;
         private readonly List<Peer> _peers = new List<Peer>();
         private AsyncCallback _onDataReceivedCallback;
-        private readonly Dictionary<string, List<Socket>> _subscriptions = new Dictionary<string, List<Socket>>();
+        private readonly Dictionary<string, List<Peer>> _subscriptions = new Dictionary<string, List<Peer>>();
         private readonly object _broadcastMessagesLock = new object();
         private readonly Dictionary<string, ListQueue<NMQMessageBase>> _queues = new Dictionary<string, ListQueue<NMQMessageBase>>();
 
@@ -65,14 +67,6 @@ namespace NTDLS.MemQueue
 
         #region Management.
 
-        public Dictionary<string, List<Socket>> Subscriptions
-        {
-            get
-            {
-                return _subscriptions;
-            }
-        }
-
         /// <summary>
         /// The number of queues.
         /// </summary>
@@ -81,6 +75,18 @@ namespace NTDLS.MemQueue
             get
             {
                 return _queues.Sum(o => o.Value.Count);
+            }
+        }
+
+        /// <summary>
+        /// The number mesages send that the server has yet to receive an acknowledgment to.
+        /// </summary>
+        public int OutstandingAcknowledgments
+        {
+            get
+            {
+                lock(_ackEvents)
+                return _ackEvents.Count();
             }
         }
 
@@ -218,6 +224,9 @@ namespace NTDLS.MemQueue
 
         public event OnBeforeCommandSendEvent OnBeforeMessageSend;
         public delegate PayloadSendAction OnBeforeCommandSendEvent(NMQServer sender, NMQMessageBase message);
+
+        public event OnCommandAcknowledgementExpiredEvent OnCommandAcknowledgementExpired;
+        public delegate void OnCommandAcknowledgementExpiredEvent(NMQServer sender, NMQMessageBase message);
 
         #endregion
 
@@ -404,7 +413,7 @@ namespace NTDLS.MemQueue
                     {
                         try
                         {
-                            _subscriptions[queueName].RemoveAll(o => o == socket);
+                            _subscriptions[queueName].RemoveAll(o => o.Socket == socket);
                         }
                         catch
                         {
@@ -442,6 +451,18 @@ namespace NTDLS.MemQueue
                         queue.Value.RemoveAll(o => now > o.ExpireTime);
                     }
 
+                    DateTime askStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
+                    lock (_ackEvents)
+                    {
+                        var acks = _ackEvents.Where(o => o.Value.CreatedDate < askStaleTime);
+                        foreach (var ack in acks)
+                        {
+                            OnCommandAcknowledgementExpired?.Invoke(this, ack.Value.Command.Message);
+                            UnacknowledgedCommands++;
+                            _ackEvents.Remove(ack.Key);
+                        }
+                    }
+
                     var erroredSockets = new List<Socket>();
 
                     List<string> queueNames = null;
@@ -465,14 +486,14 @@ namespace NTDLS.MemQueue
                             continue;
                         }
 
-                        List<Socket> sockets = null;
+                        List<Peer> peers = null;
 
                         lock (this)
                         {
-                            sockets = _subscriptions[queueName];
+                            peers = _subscriptions[queueName];
                         }
 
-                        if (sockets == null || sockets.Count == 0)
+                        if (peers == null || peers.Count == 0)
                         {
                             continue;
                         }
@@ -484,7 +505,7 @@ namespace NTDLS.MemQueue
                             NMQMessageBase queueItem = queue.Peek();
 
                             messagesSent = 0;
-                            foreach (Socket socket in sockets)
+                            foreach (Peer peer in peers)
                             {
                                 try
                                 {
@@ -496,7 +517,7 @@ namespace NTDLS.MemQueue
 
                                     byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
 
-                                    if (socket.Connected && messagePacket != null)
+                                    if (peer.Socket.Connected && messagePacket != null)
                                     {
                                         var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
 
@@ -511,17 +532,17 @@ namespace NTDLS.MemQueue
                                         }
 
                                         //Create an ACK event so we can track whether this message was received.
-                                        NMQACKEvent ackEvent = new NMQACKEvent(payload.Message.MessageId);
-                                        lock (_ackEvents) _ackEvents.Add($"{ackEvent.MessageId}", ackEvent);
+                                        NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
+                                        lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
 
-                                        SendAsync(socket, messagePacket);
+                                        SendAsync(peer.Socket, messagePacket);
 
                                         messagesSent++;
                                     }
                                 }
                                 catch (SocketException)
                                 {
-                                    erroredSockets.Add(socket);
+                                    erroredSockets.Add(peer.Socket);
                                 }
                                 catch (Exception ex)
                                 {
@@ -571,9 +592,9 @@ namespace NTDLS.MemQueue
                 {
                     return;
                 }
-                if (payload.CommandType == PayloadCommandType.CommandAck)
+                else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
-                    var key = $"{payload.Message.MessageId}";
+                    var key = $"{peer.UID}-{payload.Message.MessageId}";
                     if (_ackEvents.ContainsKey(key))
                     {
                         lock (_ackEvents) _ackEvents.Remove(key);
@@ -607,12 +628,12 @@ namespace NTDLS.MemQueue
                 {
                     if (_subscriptions.ContainsKey(payload.Message.QueueName) == false)
                     {
-                        _subscriptions.Add(payload.Message.QueueName, new List<Socket>());
+                        _subscriptions.Add(payload.Message.QueueName, new List<Peer>());
                     }
 
-                    if (_subscriptions[payload.Message.QueueName].Contains(peer.Socket) == false)
+                    if (_subscriptions[payload.Message.QueueName].Contains(peer) == false)
                     {
-                        _subscriptions[payload.Message.QueueName].Add(peer.Socket);
+                        _subscriptions[payload.Message.QueueName].Add(peer);
                     }
                 }
                 else if (payload.CommandType == PayloadCommandType.UnSubscribe)
@@ -622,7 +643,7 @@ namespace NTDLS.MemQueue
                         return; //The queue has no subscriptions.
                     }
 
-                    _subscriptions[payload.Message.QueueName].RemoveAll(o => o == peer.Socket);
+                    _subscriptions[payload.Message.QueueName].RemoveAll(o => o == peer);
 
                     if (_subscriptions[payload.Message.QueueName].Count == 0)
                     {

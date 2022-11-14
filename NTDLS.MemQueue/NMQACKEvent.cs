@@ -1,22 +1,29 @@
-﻿using System;
+﻿using NTDLS.MemQueue.Library;
+using System;
 using System.Threading;
 
 namespace NTDLS.MemQueue
 {
     internal class NMQACKEvent
     {
-        public Guid MessageId { get; set; }
+        public Peer Peer { get; set; }
+        public NMQCommand Command { get; set; }
         public DateTime CreatedDate { get; set; }
 
-        public NMQACKEvent(Guid messageId)
+        public NMQACKEvent(Peer peer, NMQCommand command)
         {
             CreatedDate = DateTime.UtcNow;
-            MessageId = messageId;
+            Peer = peer;
+            Command = command;
         }
 
-        public NMQACKEvent()
+        public string Key
         {
-            CreatedDate = DateTime.UtcNow;
+            get
+            {
+                return $"{Peer.UID}-{Command.Message.MessageId}";
+            }
         }
     }
 }
+

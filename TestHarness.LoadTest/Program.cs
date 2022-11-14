@@ -57,7 +57,7 @@ namespace TestHarness.LoadTest
                 {
                 }
 
-                Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, TCPDepth: {client.TCPSendQueueDepth}   \r");
+                Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, TCPDepth: {client.TCPSendQueueDepth}, O:{client.OutstandingAcknowledgments}: U:{client.UnacknowledgedCommands}   \r");
             }
         }
 
