@@ -18,9 +18,21 @@ namespace NTDLS.MemQueue
         /// User data, use as you will.
         /// </summary>
         public object Tag { get; set; }
+
+        /// <summary>
+        /// The number of initiated async TCP sends that have not completed.
+        /// </summary>
         public int TCPSendQueueDepth { get; private set; }
+
+        /// <summary>
+        /// The unique ID of this peer.
+        /// </summary>
         public Guid PeerId { get; private set; } = Guid.NewGuid();
-        public int UnacknowledgedCommands { get; set; }
+
+        /// <summary>
+        /// The number of commands that have been dispatched and have not been acknoledgled by the server.
+        /// </summary>
+        public int PresumedDeadCommandCount { get; set; }
 
         /// <summary>
         /// The number mesages send that the server has yet to receive an acknowledgment to.
@@ -76,7 +88,7 @@ namespace NTDLS.MemQueue
         /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
         /// </summary>
         public event MessageReceivedEvent OnMessageReceived;
-        public delegate void MessageReceivedEvent(NMQClient sender, NMQMessage message);
+        public delegate void MessageReceivedEvent(NMQClient sender, NMQNotification notification);
 
         /// <summary>
         /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
@@ -367,7 +379,7 @@ namespace NTDLS.MemQueue
                                 var ackKeys = _ackWaitEvents.Where(o => o.Value.CreatedDate < askStaleTime).Select(o => o.Key);
                                 foreach (var key in ackKeys)
                                 {
-                                    UnacknowledgedCommands++;
+                                    PresumedDeadCommandCount++;
                                     _ackWaitEvents.Remove(key);
                                 }
                             }
@@ -417,7 +429,16 @@ namespace NTDLS.MemQueue
                 //Discard.
             }
 
-            peer.Socket.BeginReceive(peer.Packet.Buffer, 0, peer.Packet.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
+            try
+            {
+                if (peer.Socket.Connected)
+                {
+                    peer.Socket.BeginReceive(peer.Packet.Buffer, 0, peer.Packet.Buffer.Length, SocketFlags.None, _onDataReceivedCallback, peer);
+                }
+            }
+            catch
+            {
+            }
         }
 
         private void OnDataReceived(IAsyncResult asyn)
@@ -690,17 +711,17 @@ namespace NTDLS.MemQueue
         /// Enqueues a message which will be broadcast to all queue subscribers.
         /// </summary>
         /// <returns>True upon successful enqueue.</returns>
-        public bool Enqueue(NMQMessage message)
+        public bool Enqueue(NMQNotification notification)
         {
-            if (message == null || string.IsNullOrWhiteSpace(message.QueueName))
+            if (notification == null || string.IsNullOrWhiteSpace(notification.QueueName))
             {
                 throw new Exception("No queue name was specified.");
             }
 
-            var queueItem = new NMQMessageBase(PeerId, message.QueueName, Guid.NewGuid(), message.ExpireSeconds)
+            var queueItem = new NMQMessageBase(PeerId, notification.QueueName, Guid.NewGuid(), notification.ExpireSeconds)
             {
-                Message = message.Message,
-                Label = message.Label,
+                Message = notification.Message,
+                Label = notification.Label,
                 MessageId = Guid.NewGuid()
             };
 
@@ -928,7 +949,7 @@ namespace NTDLS.MemQueue
                     //This is just a plain ol' message.
                     else
                     {
-                        OnMessageReceived?.Invoke(this, payload.Message.As<NMQMessage>());
+                        OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>());
                     }
                 }
                 else

@@ -8,7 +8,7 @@ namespace TestHarness.Server
         static int messagesReceived = 0;
         static int messagesSent = 0;
 
-        static void Main(string[] args)
+        static void Main()
         {
             var server = new NMQServer()
             {
@@ -20,23 +20,28 @@ namespace TestHarness.Server
             server.OnBeforeMessageReceive += Server_OnBeforeCommandReceive;
             server.OnBeforeMessageSend += Server_OnBeforeCommandSend;
 
-            server.Start();
+            server.Start(); //Start the server on the default port.
 
             Console.WriteLine($"Server running on port {server.ListenPort}.");
             Console.WriteLine($"Awaiting connections...");
+            Console.WriteLine("...");
+            Console.WriteLine("Press any key to shutdown.");
+            Console.ReadLine();
+
+            server.Stop(); //Stop the server.
         }
 
         private static PayloadSendAction Server_OnBeforeCommandSend(NMQServer sender, NMQMessageBase message)
         {
             messagesSent++;
-            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, QDepth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}, O:{sender.OutstandingAcknowledgments}, U:{sender.UnacknowledgedCommands}   \r");
+            Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, QDepth: {sender.QueueDepth()}, Unacknowledged:{sender.OutstandingAcknowledgments}, Dead:{sender.PresumedDeadCommandCount}   \r");
             return PayloadSendAction.Process;
         }
 
         private static PayloadReceiveAction Server_OnBeforeCommandReceive(NMQServer sender, NMQMessageBase message)
         {
             messagesReceived++;
-            Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, QDepth: {sender.QueueDepth()}, TCPDepth: {sender.TCPSendQueueDepth}, O:{sender.OutstandingAcknowledgments}, U:{sender.UnacknowledgedCommands}   \r");
+            Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, QDepth: {sender.QueueDepth()}, Unacknowledged:{sender.OutstandingAcknowledgments}, Dead:{sender.PresumedDeadCommandCount}   \r");
             return PayloadReceiveAction.Process;
         }
 

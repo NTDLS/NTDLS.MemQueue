@@ -6,38 +6,34 @@ namespace TestHarness.LoadTest
 {
     internal class Program
     {
-        static void Main(string[] args)
+        private static int messagesSent = 0;
+        private static int messagesReceived = 0;
+
+        static void Main()
         {
             var client = new NMQClient();
             client.OnExceptionOccured += Client_OnExceptionOccured;
-
-            string guid = Guid.NewGuid().ToString().Replace("-", "");
-
-            client.Connect("localhost");
-
             client.OnMessageReceived += Client_OnMessageReceived;
             client.OnQueryReceived += Client_OnQueryReceived;
 
+            client.Connect("localhost");
+
             client.Subscribe("TestQueue"); //We have to subscribe to a queue, otherwise we wont receive anything.
 
-            int messagesSent = 0;
-            int messagesReceived = 0;
-
-            while (true)
+            while (!Console.KeyAvailable) //Press any key to close.
             {
                 try
                 {
                     var query = new NMQQuery("TestQueue", "Ping");
-                    //Console.WriteLine($"QUERY-SEND: Message: {query.Message}");
 
                     messagesSent++;
 
-                    client.QueryAsync(query).ContinueWith((t) => //This enqueues a query that expects a reply:
+                    //Enqueue a query and wait for the reply.
+                    client.QueryAsync(query).ContinueWith((t) =>
                     {
                         if (t.Status == TaskStatus.RanToCompletion && t.Result != null)
                         {
                             messagesReceived++;
-                            //Console.WriteLine($"REPLY-RECV: Message: {t.Result.Message}");
                         }
                         else
                         {
@@ -46,19 +42,18 @@ namespace TestHarness.LoadTest
                     });
 
                     //This simply enqueues a one way message, no reply expected.
-
-                    var message = new NMQMessage("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
-                    //Console.WriteLine($"MSG-SEND: Message: {message.Message}");
+                    var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
                     client.Enqueue(message);
-
-                    //System.Threading.Thread.Sleep(1);
+                    messagesSent++;
                 }
                 catch
                 {
                 }
 
-                Console.Write($"Rcvd: {messagesReceived}, Sent: {messagesSent}, TCPDepth: {client.TCPSendQueueDepth}, O:{client.OutstandingAcknowledgments}: U:{client.UnacknowledgedCommands}   \r");
+                Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{client.OutstandingAcknowledgments}: Dead:{client.PresumedDeadCommandCount}   \r");
             }
+
+            client.Disconnect();
         }
 
         private static void Client_OnExceptionOccured(NMQBase sender, Exception exception)
@@ -66,14 +61,9 @@ namespace TestHarness.LoadTest
             Console.WriteLine($"EXCEPTION: {exception.Message}");
         }
 
-        static int queriresReceived = 0;
-
-        //If we receive a query, reply to it.
         private static NMQQueryReplyResult Client_OnQueryReceived(NMQClient sender, NMQQuery query)
         {
-            queriresReceived++;
-
-            if (query.Message == "Ping")
+            if (query.Message == "Ping") //We receive a query with the message "Ping", reply with "Pong".
             {
                 return sender.Reply(query, new NMQReply("Pong"));
             }
@@ -83,10 +73,10 @@ namespace TestHarness.LoadTest
             }
         }
 
-        //If we receive a message, just display it.
-        private static void Client_OnMessageReceived(NMQClient sender, NMQMessage message)
+        private static void Client_OnMessageReceived(NMQClient sender, NMQNotification message)
         {
-            //Console.WriteLine($"MSG-RECV: {message.Message}");
+            //We receive the message!
+            messagesReceived++;
         }
     }
 }

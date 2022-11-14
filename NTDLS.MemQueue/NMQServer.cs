@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace NTDLS.MemQueue
 {
@@ -24,7 +23,10 @@ namespace NTDLS.MemQueue
         /// </summary>
         public object ListenPort { get; private set; }
 
-        public int UnacknowledgedCommands { get; private set; }
+        /// <summary>
+        /// The number of commands that have been dispatched and have not been acknoledgled by a client.
+        /// </summary>
+        public int PresumedDeadCommandCount { get; private set; }
 
         /// <summary>
         /// The number of seconds to allow an item to remain in the queue after being added. 0 = infinite.
@@ -36,6 +38,9 @@ namespace NTDLS.MemQueue
         /// </summary>
         public bool BroadcastMessagesAsReceived { get; set; } = true;
 
+        /// <summary>
+        /// The number of initiated async TCP sends that have not completed.
+        /// </summary>
         public int TCPSendQueueDepth { get; private set; }
 
         #region Backend Variables.
@@ -458,7 +463,7 @@ namespace NTDLS.MemQueue
                         foreach (var ack in acks)
                         {
                             OnCommandAcknowledgementExpired?.Invoke(this, ack.Value.Command.Message);
-                            UnacknowledgedCommands++;
+                            PresumedDeadCommandCount++;
                             _ackEvents.Remove(ack.Key);
                         }
                     }
