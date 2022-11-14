@@ -85,8 +85,8 @@ namespace NTDLS.MemQueue
         {
             get
             {
-                lock(_ackEvents)
-                return _ackEvents.Count();
+                lock (_ackEvents)
+                    return _ackEvents.Count();
             }
         }
 
@@ -588,10 +588,12 @@ namespace NTDLS.MemQueue
 
                 var action = OnBeforeMessageReceive?.Invoke(this, payload.Message);
 
+                //The custom even henalder said to drop the command. Ablige...
                 if (action == PayloadReceiveAction.Discard)
                 {
                     return;
                 }
+                //The client just connected, they are lettng us know who they are.
                 else if (payload.CommandType == PayloadCommandType.Hello)
                 {
                     peer.PeerId = payload.Message.PeerId;
@@ -606,6 +608,7 @@ namespace NTDLS.MemQueue
                     byte[] messagePacket = Packetizer.AssembleMessagePacket(this, replyPayload);
                     SendAsync(peer.Socket, messagePacket);
                 }
+                //The client is acknowledging the receipt of a command.
                 else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
                     var key = $"{peer.PeerId}-{payload.Message.MessageId}";
@@ -618,6 +621,7 @@ namespace NTDLS.MemQueue
                         //Client... what are you ack'ing?
                     }
                 }
+                //The client is asking that a message be enqueued.
                 else if (payload.CommandType == PayloadCommandType.Enqueue)
                 {
                     if (_queues.ContainsKey(payload.Message.QueueName) == false)
@@ -628,6 +632,7 @@ namespace NTDLS.MemQueue
                     var queue = _queues[payload.Message.QueueName];
                     _queues[payload.Message.QueueName].Enqueue(payload.Message);
                 }
+                //The client is asking that the queue be cleared.
                 else if (payload.CommandType == PayloadCommandType.Clear)
                 {
                     if (_queues.ContainsKey(payload.Message.QueueName) == false)
@@ -638,6 +643,7 @@ namespace NTDLS.MemQueue
                     var queue = _queues[payload.Message.QueueName];
                     _queues[payload.Message.QueueName].Clear();
                 }
+                //The client is asking to subscribe to a queue and receive all messages sent to it.
                 else if (payload.CommandType == PayloadCommandType.Subscribe)
                 {
                     if (_subscriptions.ContainsKey(payload.Message.QueueName) == false)
@@ -650,6 +656,7 @@ namespace NTDLS.MemQueue
                         _subscriptions[payload.Message.QueueName].Add(peer);
                     }
                 }
+                //The client is asking to unsubscribe from a queue and no longer receive any messages sent to it.
                 else if (payload.CommandType == PayloadCommandType.UnSubscribe)
                 {
                     if (_subscriptions.ContainsKey(payload.Message.QueueName) == false)
@@ -664,12 +671,13 @@ namespace NTDLS.MemQueue
                         _subscriptions.Remove(payload.Message.QueueName);
                     }
                 }
+                //The client has lost its mind.
                 else
                 {
                     throw new Exception("Command type is not implemented.");
                 }
 
-                #region It doesnt hurt to sent an ACK for each message.
+                //Acknoledge commands. Even if the client doesnt want one, it will safely ignore it.
                 if (payload.CommandType != PayloadCommandType.CommandAck)
                 {
                     var ackPayload = new NMQCommand()
@@ -686,8 +694,6 @@ namespace NTDLS.MemQueue
                     byte[] messagePacket = Packetizer.AssembleMessagePacket(this, ackPayload);
                     SendAsync(peer.Socket, messagePacket);
                 }
-
-                #endregion
             }
             catch (Exception ex)
             {

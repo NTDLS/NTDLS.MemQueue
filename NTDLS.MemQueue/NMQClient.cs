@@ -870,10 +870,12 @@ namespace NTDLS.MemQueue
         {
             try
             {
+                //the client just connected, the client said hello and the server is just waving back.
                 if (payload.CommandType == PayloadCommandType.Hello)
                 {
                     //Gald to see you server!
                 }
+                //The server is acknowledging the receipt of a command.
                 else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
                     var key = $"{payload.Message.MessageId}";
@@ -887,40 +889,51 @@ namespace NTDLS.MemQueue
                         //Server... what are you ack'ing?
                     }
                 }
-                else if (payload.Message.IsQuery)
+                //The command is a message. It could be a query, a reply to a query or just a message.
+                else if (payload.CommandType == PayloadCommandType.ProcessMessage)
                 {
-                    OnQueryReceived?.Invoke(this, payload.Message.As<NMQQuery>());
-                }
-                else if (payload.Message.InReplyToMessageId == null)
-                {
-                    OnMessageReceived?.Invoke(this, payload.Message.As<NMQMessage>());
-                }
-                else
-                {
-                    NMQQuerySubscription messageQuerySubscription = null;
-
-                    lock (messageQuerySubscriptions)
+                    //The received command is a query.
+                    if (payload.Message.IsQuery)
                     {
-                        messageQuerySubscription = (from o in messageQuerySubscriptions
-                                                    where o.OriginalMessageId == payload.Message.InReplyToMessageId
-                                                    select o).FirstOrDefault();
+                        OnQueryReceived?.Invoke(this, payload.Message.As<NMQQuery>());
+                    }
+                    //This message is in reply to a query - match them up.
+                    else if (payload.Message.IsReply)
+                    {
+                        NMQQuerySubscription messageQuerySubscription = null;
 
-                        OnQueryReplyReceived?.Invoke(this, payload.Message.As<NMQReply>(), messageQuerySubscription != null);
+                        lock (messageQuerySubscriptions)
+                        {
+                            messageQuerySubscription = (from o in messageQuerySubscriptions
+                                                        where o.OriginalMessageId == payload.Message.InReplyToMessageId
+                                                        select o).FirstOrDefault();
+
+                            OnQueryReplyReceived?.Invoke(this, payload.Message.As<NMQReply>(), messageQuerySubscription != null);
+
+                            if (messageQuerySubscription != null)
+                            {
+                                messageQuerySubscription.SetReply(payload.Message);
+                            }
+                            else
+                            {
+                                //If there is no open query for this reply, then discard it.
+                            }
+                        }
 
                         if (messageQuerySubscription != null)
                         {
-                            messageQuerySubscription.SetReply(payload.Message);
-                        }
-                        else
-                        {
-                            //If there is no open query for this reply, then discard it.
+                            messageQuerySubscription.PayloadProcessedEvent.WaitOne();
                         }
                     }
-
-                    if (messageQuerySubscription != null)
+                    //This is just a plain ol' message.
+                    else
                     {
-                        messageQuerySubscription.PayloadProcessedEvent.WaitOne();
+                        OnMessageReceived?.Invoke(this, payload.Message.As<NMQMessage>());
                     }
+                }
+                else
+                {
+                    throw new Exception("Command type is not implemented.");
                 }
 
                 #region It doesnt hurt to sent an ACK for each message.
