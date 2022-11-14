@@ -21,7 +21,7 @@ namespace NTDLS.MemQueue
         {
             get
             {
-                return $"{Peer.UID}-{Command.Message.MessageId}";
+                return $"{Peer.PeerId}-{Command.Message.MessageId}";
             }
         }
     }

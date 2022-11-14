@@ -592,9 +592,23 @@ namespace NTDLS.MemQueue
                 {
                     return;
                 }
+                else if (payload.CommandType == PayloadCommandType.Hello)
+                {
+                    peer.PeerId = payload.Message.PeerId;
+
+                    var replyPayload = new NMQCommand()
+                    {
+                        Message = new NMQMessageBase(peer.PeerId, Guid.NewGuid()),
+                        CommandType = PayloadCommandType.Hello
+                    };
+
+                    //Wave back.
+                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, replyPayload);
+                    SendAsync(peer.Socket, messagePacket);
+                }
                 else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
-                    var key = $"{peer.UID}-{payload.Message.MessageId}";
+                    var key = $"{peer.PeerId}-{payload.Message.MessageId}";
                     if (_ackEvents.ContainsKey(key))
                     {
                         lock (_ackEvents) _ackEvents.Remove(key);
@@ -662,7 +676,7 @@ namespace NTDLS.MemQueue
                     {
                         Message = new NMQMessageBase
                         {
-                            ClientId = payload.Message.ClientId,
+                            PeerId = payload.Message.PeerId,
                             MessageId = payload.Message.MessageId,
                             QueueName = payload.Message.QueueName
                         },

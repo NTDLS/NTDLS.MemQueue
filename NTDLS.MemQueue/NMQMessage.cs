@@ -24,8 +24,8 @@ namespace NTDLS.MemQueue
         {
         }
 
-        protected NMQMessage(Guid clientId, string queueName, Guid messageId, int expireSeconds)
-            : base(clientId, queueName, messageId, expireSeconds)
+        protected NMQMessage(Guid peerId, string queueName, Guid messageId, int expireSeconds)
+            : base(peerId, queueName, messageId, expireSeconds)
         {
         }
     }

@@ -19,7 +19,7 @@ namespace NTDLS.MemQueue
         /// </summary>
         public object Tag { get; set; }
         public int TCPSendQueueDepth { get; private set; }
-        public Guid ClientId { get; private set; } = Guid.NewGuid();
+        public Guid PeerId { get; private set; } = Guid.NewGuid();
         public int UnacknowledgedCommands { get; set; }
 
         /// <summary>
@@ -185,6 +185,7 @@ namespace NTDLS.MemQueue
             return Connect(ipAddress, port, true);
         }
 
+
         /// <summary>
         /// Connect to the server.
         /// </summary>
@@ -194,8 +195,25 @@ namespace NTDLS.MemQueue
         /// <returns></returns>
         private bool Connect(IPAddress ipAddress, int port, bool startMonitorThread)
         {
-            bool result = false;
+            bool result = ConnectEx(ipAddress, port);
 
+            if (startMonitorThread)
+            {
+                new Thread(MonitorThreadProc).Start();
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Connect to the server.
+        /// </summary>
+        /// <param name="hostName">Host or IP address of queue server.</param>
+        /// <param name="port">Port number of queue server.</param>
+        /// <param name="retryInBackground">If false, the client will not retry to connect if the connection fails.</param>
+        /// <returns></returns>
+        private bool ConnectEx(IPAddress ipAddress, int port)
+        {
             _continueRunning = true;
             _serverIpAddress = ipAddress;
             _serverPort = port;
@@ -207,9 +225,33 @@ namespace NTDLS.MemQueue
                 _connectSocket.Connect(new IPEndPoint(ipAddress, port));
                 if (_connectSocket != null && _connectSocket.Connected)
                 {
+                    var payload = new NMQCommand()
+                    {
+                        Message = new NMQMessageBase(PeerId, Guid.NewGuid()),
+                        CommandType = PayloadCommandType.Hello
+                    };
+
+                    var messagePacket = Packetizer.AssembleMessagePacket(this, payload);
+
+                    //Create wait event and wait for ACK.
+                    NMQWaitEvent waitEvent = new NMQWaitEvent(payload.Message.MessageId);
+                    lock (_ackWaitEvents) _ackWaitEvents.Add($"{waitEvent.MessageId}", waitEvent);
+
+                    SendAsync(_connectSocket, messagePacket);
+
                     WaitForData(new Peer(_connectSocket));
+
+                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                    {
+                        lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
+                        _connectSocket?.Dispose();
+                        _connectSocket = null;
+                        return false;
+                    }
+
                     OnConnected?.Invoke();
-                    result = true;
+
+                    return true;
                 }
             }
             catch
@@ -218,12 +260,7 @@ namespace NTDLS.MemQueue
                 _connectSocket = null;
             }
 
-            if (startMonitorThread)
-            {
-                new Thread(MonitorThreadProc).Start();
-            }
-
-            return result;
+            return false;
         }
 
         /// <summary>
@@ -452,7 +489,7 @@ namespace NTDLS.MemQueue
                     messageQuerySubscriptions.Add(querySubscription);
                 }
 
-                var queueItem = new NMQMessageBase(ClientId, query.QueueName, messageId, query.ExpireSeconds)
+                var queueItem = new NMQMessageBase(PeerId, query.QueueName, messageId, query.ExpireSeconds)
                 {
                     Message = query.Message,
                     Label = query.Label,
@@ -529,7 +566,7 @@ namespace NTDLS.MemQueue
                     messageQuerySubscriptions.Add(querySubscription);
                 }
 
-                var queueItem = new NMQMessageBase(ClientId, query.QueueName, messageId, query.ExpireSeconds)
+                var queueItem = new NMQMessageBase(PeerId, query.QueueName, messageId, query.ExpireSeconds)
                 {
                     Message = query.Message,
                     Label = query.Label,
@@ -584,7 +621,7 @@ namespace NTDLS.MemQueue
 
             try
             {
-                var queueItem = new NMQMessageBase(ClientId, query.QueueName, Guid.NewGuid(), query.ExpireSeconds)
+                var queueItem = new NMQMessageBase(PeerId, query.QueueName, Guid.NewGuid(), query.ExpireSeconds)
                 {
                     Message = reply.Message,
                     Label = reply.Label,
@@ -626,7 +663,7 @@ namespace NTDLS.MemQueue
 
             try
             {
-                var queueItem = new NMQMessageBase(ClientId, query.QueueName, Guid.NewGuid(), query.ExpireSeconds)
+                var queueItem = new NMQMessageBase(PeerId, query.QueueName, Guid.NewGuid(), query.ExpireSeconds)
                 {
                     Message = string.Empty,
                     Label = string.Empty,
@@ -660,7 +697,7 @@ namespace NTDLS.MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            var queueItem = new NMQMessageBase(ClientId, message.QueueName, Guid.NewGuid(), message.ExpireSeconds)
+            var queueItem = new NMQMessageBase(PeerId, message.QueueName, Guid.NewGuid(), message.ExpireSeconds)
             {
                 Message = message.Message,
                 Label = message.Label,
@@ -692,7 +729,7 @@ namespace NTDLS.MemQueue
 
             try
             {
-                //Create wait even and wait for ACK.
+                //Create wait event and wait for ACK.
                 NMQWaitEvent waitEvent = null;
                 //We dont wait on replies because we seem to deadlock if we do.
                 waitEvent = new NMQWaitEvent(payload.Message.MessageId);
@@ -731,7 +768,7 @@ namespace NTDLS.MemQueue
         {
             var payload = new NMQCommand()
             {
-                Message = new NMQMessageBase(ClientId, queueName, Guid.NewGuid(), 0),
+                Message = new NMQMessageBase(PeerId, queueName, Guid.NewGuid(), 0),
                 CommandType = PayloadCommandType.Subscribe
             };
 
@@ -769,7 +806,7 @@ namespace NTDLS.MemQueue
         {
             var payload = new NMQCommand()
             {
-                Message = new NMQMessageBase(ClientId, queueName, Guid.NewGuid(), 0),
+                Message = new NMQMessageBase(PeerId, queueName, Guid.NewGuid(), 0),
                 CommandType = PayloadCommandType.UnSubscribe
             };
 
@@ -804,7 +841,7 @@ namespace NTDLS.MemQueue
         {
             var payload = new NMQCommand()
             {
-                Message = new NMQMessageBase(ClientId, queueName, Guid.NewGuid(), 0),
+                Message = new NMQMessageBase(PeerId, queueName, Guid.NewGuid(), 0),
                 CommandType = PayloadCommandType.Clear
             };
 
@@ -833,7 +870,11 @@ namespace NTDLS.MemQueue
         {
             try
             {
-                if (payload.CommandType == PayloadCommandType.CommandAck)
+                if (payload.CommandType == PayloadCommandType.Hello)
+                {
+                    //Gald to see you server!
+                }
+                else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
                     var key = $"{payload.Message.MessageId}";
                     if (_ackWaitEvents.ContainsKey(key))
@@ -889,7 +930,7 @@ namespace NTDLS.MemQueue
                     {
                         Message = new NMQMessageBase
                         {
-                            ClientId = payload.Message.ClientId,
+                            PeerId = payload.Message.PeerId,
                             MessageId = payload.Message.MessageId,
                             QueueName = payload.Message.QueueName
                         },

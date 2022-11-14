@@ -3,6 +3,7 @@
     internal enum PayloadCommandType
     {
         Unspecified,
+        Hello,
 
         //Commands sent to a SERVER:
         Enqueue,

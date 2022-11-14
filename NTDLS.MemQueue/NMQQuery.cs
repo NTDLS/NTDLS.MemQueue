@@ -23,9 +23,8 @@ namespace NTDLS.MemQueue
         public NMQQuery()
         {
         }
-
-        protected NMQQuery(Guid clientId, string queueName, Guid messageId, int expireSeconds)
-            : base(clientId, queueName, messageId, expireSeconds)
+        protected NMQQuery(Guid peerId, string queueName, Guid messageId, int expireSeconds)
+            : base(peerId, queueName, messageId, expireSeconds)
         {
         }
 

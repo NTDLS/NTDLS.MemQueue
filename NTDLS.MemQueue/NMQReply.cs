@@ -22,8 +22,8 @@ namespace NTDLS.MemQueue
         {
         }
 
-        protected NMQReply(Guid clientId, string queueName, Guid messageId, int expireSeconds)
-            : base(clientId, queueName, messageId, expireSeconds)
+        protected NMQReply(Guid peerId, string queueName, Guid messageId, int expireSeconds)
+            : base(peerId, queueName, messageId, expireSeconds)
         {
         }
     }

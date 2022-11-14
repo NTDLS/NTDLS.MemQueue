@@ -32,7 +32,7 @@ namespace NTDLS.MemQueue
         /// <summary>
         /// Unique id of the client that sent the message.
         /// </summary>
-        public Guid ClientId { get; internal set; }
+        public Guid PeerId { get; internal set; }
         /// <summary>
         /// For replies, this is the MessageId of the message for which the reply is to.
         /// </summary>
@@ -76,13 +76,28 @@ namespace NTDLS.MemQueue
             }
         }
 
-        public NMQMessageBase(Guid clientId, string queueName, Guid messageId, int expireSeconds)
+        public NMQMessageBase(Guid peerId, string queueName, Guid messageId, int expireSeconds)
         {
-            ClientId = clientId;
+            PeerId = peerId;
             MessageId = messageId;
             QueueName = queueName;
             CreatedTime = DateTime.UtcNow;
             ExpireSeconds = expireSeconds;
+        }
+
+        public NMQMessageBase(Guid peerId, string queueName, Guid messageId)
+        {
+            PeerId = peerId;
+            MessageId = messageId;
+            QueueName = queueName;
+            CreatedTime = DateTime.UtcNow;
+        }
+
+        public NMQMessageBase(Guid peerId, Guid messageId)
+        {
+            PeerId = peerId;
+            MessageId = messageId;
+            CreatedTime = DateTime.UtcNow;
         }
 
         public NMQMessageBase()
@@ -99,7 +114,7 @@ namespace NTDLS.MemQueue
                 Label = this.Label,
                 Message = this.Message,
                 MessageId = this.MessageId,
-                ClientId = this.ClientId,
+                PeerId = this.PeerId,
                 InReplyToMessageId = this.InReplyToMessageId,
                 IsQuery = this.IsQuery
             };
