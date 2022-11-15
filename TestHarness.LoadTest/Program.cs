@@ -42,8 +42,8 @@ namespace TestHarness.LoadTest
                     });
 
                     //This simply enqueues a one way message, no reply expected.
-                    //var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
-                    //client.Enqueue(message);
+                    var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
+                    client.Enqueue(message);
                     messagesSent++;
                 }
                 catch
@@ -51,7 +51,7 @@ namespace TestHarness.LoadTest
                 }
 
                 Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{client.OutstandingAcknowledgments}: Dead:{client.PresumedDeadCommandCount}   \r");
-                Thread.Sleep(100);
+                Thread.Sleep(10);
             }
 
             client.Disconnect();
@@ -74,14 +74,11 @@ namespace TestHarness.LoadTest
             }
         }
 
-        private static bool Client_OnMessageReceived(NMQClient sender, NMQNotification message)
+        private static void Client_OnMessageReceived(NMQClient sender, NMQNotification message)
         {
             //We receive the message!
             messagesReceived++;
-
-            Thread.Sleep(500);
-
-            return true;
+            //Thread.Sleep(100);
         }
     }
 }

@@ -22,13 +22,12 @@ namespace TestHarness.Chat
             }
         }
 
-        private static bool Client_OnMessageReceived(NMQClient sender, NMQNotification notification)
+        private static void Client_OnMessageReceived(NMQClient sender, NMQNotification notification)
         {
             if (notification.PeerId != sender.PeerId) //Dont care to see message from ourself.
             {
                 Console.WriteLine($"{notification.Message}");
             }
-            return true;
         }
     }
 }

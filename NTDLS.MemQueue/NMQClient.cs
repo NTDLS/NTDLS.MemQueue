@@ -14,6 +14,8 @@ namespace NTDLS.MemQueue
     /// </summary>
     public class NMQClient : NMQBase
     {
+        #region Public Properties.
+
         /// <summary>
         /// User data, use as you will.
         /// </summary>
@@ -45,6 +47,8 @@ namespace NTDLS.MemQueue
                     return _ackWaitEvents.Count();
             }
         }
+
+        #endregion
 
         #region Backend Variables.
 
@@ -88,7 +92,7 @@ namespace NTDLS.MemQueue
         /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
         /// </summary>
         public event MessageReceivedEvent OnMessageReceived;
-        public delegate bool MessageReceivedEvent(NMQClient sender, NMQNotification notification);
+        public delegate void MessageReceivedEvent(NMQClient sender, NMQNotification notification);
 
         /// <summary>
         /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
@@ -288,7 +292,6 @@ namespace NTDLS.MemQueue
 
         #region Socket Client.
 
-
         private void SendAsync(NMQCommand command)
         {
             SendAsync(Packetizer.AssembleMessagePacket(this, command));
@@ -303,7 +306,6 @@ namespace NTDLS.MemQueue
                 {
                     _peerSocket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), _peerSocket);
                 }
-                Thread.Sleep(1); //This is for everyones wellbeing, only on the client though.
             }
             catch (Exception ex)
             {
@@ -460,17 +462,17 @@ namespace NTDLS.MemQueue
                 if (socket.Connected)
                 {
                     peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
+
+                    if (peer.Packet.BufferLength == 0)
+                    {
+                        CloseSocket();
+                        return;
+                    }
+
+                    Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
+
+                    WaitForData(peer);
                 }
-
-                if (peer.Packet.BufferLength == 0)
-                {
-                    CloseSocket();
-                    return;
-                }
-
-                Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
-
-                WaitForData(peer);
             }
             catch (ObjectDisposedException)
             {
@@ -770,9 +772,13 @@ namespace NTDLS.MemQueue
                 SendAsync(payload);
                 OnEnqueued?.Invoke(this, payload.Message);
 
-                if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                //Waiting for a ACK to a reply causes a deadlock.
+                if (payload.Message.IsReply == false)
                 {
-                    lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
+                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                    {
+                        lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
+                    }
                 }
             }
             catch (SocketException)
@@ -894,7 +900,7 @@ namespace NTDLS.MemQueue
             }
         }
 
-        private void PacketPayloadHandler(Peer peer, Packet packet, NMQCommand payload)
+        private void PacketPayloadHandler(Peer peer, NMQCommand payload)
         {
             try
             {
@@ -967,14 +973,16 @@ namespace NTDLS.MemQueue
                     //This is just a plain ol' message.
                     else
                     {
-                        if (OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>()) == true)
+                        Task.Run(() =>
                         {
-                            SendAsync(new NMQCommand()
-                            {
-                                Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
-                                CommandType = PayloadCommandType.ProcessedAck
-                            });
-                        }
+                            OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>());
+                        });
+
+                        SendAsync(new NMQCommand()
+                        {
+                            Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
+                            CommandType = PayloadCommandType.ProcessedAck
+                        });
                     }
                 }
                 else
@@ -983,7 +991,7 @@ namespace NTDLS.MemQueue
                 }
 
                 #region It doesnt hurt to sent an ACK for each message.
-                if (payload.CommandType != PayloadCommandType.CommandAck)
+                if (payload.CommandType != PayloadCommandType.CommandAck && payload.CommandType != PayloadCommandType.ProcessedAck)
                 {
                     SendAsync(new NMQCommand()
                     {

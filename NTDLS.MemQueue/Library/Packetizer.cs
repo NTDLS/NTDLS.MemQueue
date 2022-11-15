@@ -7,7 +7,7 @@ namespace NTDLS.MemQueue.Library
 {
     internal static class Packetizer
     {
-        public delegate void ProcessPayloadCallback(Peer peer, Packet packet, NMQCommand payload);
+        public delegate void ProcessPayloadCallback(Peer peer, NMQCommand payload);
 
         public static byte[] AssembleMessagePacket(NMQBase q, NMQCommand payload)
         {
@@ -126,12 +126,9 @@ namespace NTDLS.MemQueue.Library
 
                     var payloadBody = Decompress(payloadBytes);
 
-                    NMQCommand payload = (NMQCommand)Serialization.ByteArrayToObject(payloadBody);
+                    var payload = (NMQCommand)Serialization.ByteArrayToObject(payloadBody);
 
-                    Task.Run(() =>
-                    {
-                        processPayload(peer, packet, payload);
-                    });
+                    processPayload(peer, payload);
 
                     //Zero out the consumed portion of the payload buffer - more for fun than anything else.
                     Array.Clear(packet.PayloadBuilder, 0, grossPayloadSize);

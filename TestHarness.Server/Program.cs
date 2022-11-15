@@ -11,11 +11,7 @@ namespace TestHarness.Server
 
         static void Main()
         {
-            var server = new NMQServer()
-            {
-                StaleItemExpirationSeconds = 600,
-                BrodcastScheme = BrodcastScheme.Uniform
-            };
+            var server = new NMQServer();
 
             //These events are 100% unnecessary, just wanted to show some status text.
             server.OnExceptionOccured += Server_OnExceptionOccured;

@@ -1,6 +1,5 @@
 ﻿using NTDLS.MemQueue.Library;
 using System;
-using System.Threading;
 
 namespace NTDLS.MemQueue
 {
