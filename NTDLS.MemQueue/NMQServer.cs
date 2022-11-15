@@ -13,6 +13,8 @@ namespace NTDLS.MemQueue
     /// </summary>
     public class NMQServer : NMQBase
     {
+        #region Public Properties.
+
         /// <summary>
         /// User data, use as you will.
         /// </summary>
@@ -36,12 +38,31 @@ namespace NTDLS.MemQueue
         /// <summary>
         /// Whether the servers should broadcast the messages as soon as they are received or buffer them for distribution by a pump thread.
         /// </summary>
-        public bool BroadcastMessagesAsReceived { get; set; } = true;
+        public bool BroadcastMessagesImmediately { get; set; } = true;
 
         /// <summary>
         /// The number of initiated async TCP sends that have not completed.
         /// </summary>
         public int TCPSendQueueDepth { get; private set; }
+
+        private BrodcastScheme _brodcastScheme = BrodcastScheme.NotSet;
+        public BrodcastScheme BrodcastScheme
+        {
+            get
+            {
+                return _brodcastScheme;
+            }
+            set
+            {
+                if (_brodcastScheme != BrodcastScheme.NotSet)
+                {
+                    throw new Exception("Broadcast scheme can not be changed after being set.");
+                }
+                _brodcastScheme = value;
+            }
+        }
+
+        #endregion
 
         #region Backend Variables.
 
@@ -158,6 +179,11 @@ namespace NTDLS.MemQueue
             _listenSocket.BeginAccept(new AsyncCallback(ClientConnectProc), null);
 
             _continueRunning = true;
+
+            if (_brodcastScheme == BrodcastScheme.NotSet)
+            {
+                this.BrodcastScheme = BrodcastScheme.Uniform;
+            }
 
             new Thread(BroadcastThread).Start();
         }
@@ -345,7 +371,7 @@ namespace NTDLS.MemQueue
 
                 Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
 
-                if (BroadcastMessagesAsReceived)
+                if (BroadcastMessagesImmediately)
                 {
                     BroadcastMessages();
                 }
@@ -435,7 +461,17 @@ namespace NTDLS.MemQueue
 
         #endregion
 
-        #region Commands.
+        #region Broadcast Schemes.
+
+        private List<string> GetAllSubscribedQueueNames()
+        {
+            lock (this) return _subscriptions.Keys.ToList();
+        }
+
+        private List<Peer> GetSubscriptionPeers(string queueName)
+        {
+            lock (this) return _subscriptions[queueName];
+        }
 
         private void BroadcastMessages()
         {
@@ -468,110 +504,17 @@ namespace NTDLS.MemQueue
                         }
                     }
 
-                    var erroredSockets = new List<Socket>();
-
-                    List<string> queueNames = null;
-
-                    lock (this)
+                    if (BrodcastScheme == BrodcastScheme.Uniform)
                     {
-                        queueNames = _subscriptions.Keys.ToList();
+                        BroadcastMessages_Uniform();
                     }
-
-                    foreach (string queueName in queueNames)
+                    else if (BrodcastScheme == BrodcastScheme.FireAndForget)
                     {
-                        if (_queues.ContainsKey(queueName) == false)
-                        {
-                            continue; //The queue is empty.
-                        }
-
-                        var queue = _queues[queueName];
-
-                        if (queue == null || queue.Count == 0)
-                        {
-                            continue;
-                        }
-
-                        List<Peer> peers = null;
-
-                        lock (this)
-                        {
-                            peers = _subscriptions[queueName];
-                        }
-
-                        if (peers == null || peers.Count == 0)
-                        {
-                            continue;
-                        }
-
-                        int messagesSent = -1;
-
-                        while (queue.Count > 0 && messagesSent != 0)
-                        {
-                            NMQMessageBase queueItem = queue.Peek();
-
-                            messagesSent = 0;
-                            foreach (Peer peer in peers)
-                            {
-                                try
-                                {
-                                    var payload = new NMQCommand()
-                                    {
-                                        Message = queueItem,
-                                        CommandType = PayloadCommandType.ProcessMessage
-                                    };
-
-                                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
-
-                                    if (peer.Socket.Connected && messagePacket != null)
-                                    {
-                                        var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
-
-                                        if (action == PayloadSendAction.Discard)
-                                        {
-                                            messagesSent++; //Make sure the message is removed from the queue.
-                                            continue;
-                                        }
-                                        else if (action == PayloadSendAction.Skip)
-                                        {
-                                            continue; //Skip sending to this client.
-                                        }
-
-                                        //Create an ACK event so we can track whether this message was received.
-                                        NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
-                                        lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
-
-                                        SendAsync(peer.Socket, messagePacket);
-
-                                        messagesSent++;
-                                    }
-                                }
-                                catch (SocketException)
-                                {
-                                    erroredSockets.Add(peer.Socket);
-                                }
-                                catch (Exception ex)
-                                {
-                                    LogException(ex);
-                                }
-                            }
-
-                            if (messagesSent > 0)
-                            {
-                                lock (this)
-                                {
-                                    queue.Dequeue();
-                                }
-                            }
-                        }
+                        BroadcastMessages_FireAndForget();
                     }
-
-                    while (erroredSockets.Count > 0)
+                    else
                     {
-                        lock (this)
-                        {
-                            CleanupConnection(erroredSockets[0]);
-                            erroredSockets.RemoveAt(0);
-                        }
+                        throw new Exception("Unknown broadcast scheme.");
                     }
                 }
                 catch (Exception ex)
@@ -584,6 +527,174 @@ namespace NTDLS.MemQueue
                 }
             }
         }
+
+        /// <summary>
+        /// Send the next message to each subscribed peer. Wait until all of them have acknowledged the
+        /// processing of the message before moving to the next message in the queue. This is basically
+        /// the opposite of round-robin because every subscriber gets a copy.
+        /// </summary>
+        private void BroadcastMessages_Uniform()
+        {
+            foreach (string queueName in GetAllSubscribedQueueNames())
+            {
+                if (_queues.ContainsKey(queueName) == false)
+                {
+                    continue; //The queue is empty.
+                }
+
+                var queue = _queues[queueName];
+                if (queue == null || queue.Count == 0)
+                {
+                    continue;
+                }
+
+                var peers = GetSubscriptionPeers(queueName);
+                if (peers == null || peers.Count == 0)
+                {
+                    continue;
+                }
+
+                //If all of the peers have an empty pending message then assign the next one in the queue.
+                NMQMessageBase message = queue.Peek(); //Get the next queue item and queue it up for all subscribed peers.
+                peers.Where(o => o.CurrentMessage == null).ToList().ForEach(o => o.CurrentMessage = new NMQMessageEnvelope() { Message = message });
+
+                foreach (var peer in peers)
+                {
+                    if (peer.CurrentMessage.Sent == false)
+                    {
+                        var payload = new NMQCommand()
+                        {
+                            Message = peer.CurrentMessage.Message,
+                            CommandType = PayloadCommandType.ProcessMessage
+                        };
+
+                        byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
+
+                        if (peer.Socket.Connected && messagePacket != null)
+                        {
+                            var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
+
+                            if (action == PayloadSendAction.Skip)
+                            {
+                                //Skip sending to this client.
+                                peer.CurrentMessage.Sent = true;
+                            }
+                            else
+                            {
+                                //Create an ACK event so we can track whether this message was received.
+                                NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
+                                lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
+                                SendAsync(peer.Socket, messagePacket);
+
+                                peer.CurrentMessage.Sent = true;
+                            }
+                        }
+                    }
+                }
+
+                //The message has been sent to all peers, remove it from the queue.
+                if (peers.Select(o => o.CurrentMessage).Where(o => o.IsComplete == false).Any() == false)
+                {
+                    lock (this) queue.Dequeue();
+                    peers.ForEach(o => o.CurrentMessage = null);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send each message to each subscribed peer as fast as possible. Don't even wait on the peer to acknowledged the receipt or processing of the message.
+        /// This isn't necessarily unreliable, but could overwhelm a peer if it gets behind in processing - which would lead to unreliability.
+        /// </summary>
+        private void BroadcastMessages_FireAndForget()
+        {
+            var erroredSockets = new List<Socket>();
+
+            foreach (string queueName in GetAllSubscribedQueueNames())
+            {
+                if (_queues.ContainsKey(queueName) == false)
+                {
+                    continue; //The queue is empty.
+                }
+
+                var queue = _queues[queueName];
+                if (queue == null || queue.Count == 0)
+                {
+                    continue;
+                }
+
+                var peers = GetSubscriptionPeers(queueName);
+                if (peers == null || peers.Count == 0)
+                {
+                    continue;
+                }
+
+                int messagesSent = -1;
+
+                while (queue.Count > 0 && messagesSent != 0)
+                {
+                    NMQMessageBase queueItem = queue.Peek();
+
+                    messagesSent = 0;
+                    foreach (Peer peer in peers)
+                    {
+                        try
+                        {
+                            var payload = new NMQCommand()
+                            {
+                                Message = queueItem,
+                                CommandType = PayloadCommandType.ProcessMessage
+                            };
+
+                            byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
+
+                            if (peer.Socket.Connected && messagePacket != null)
+                            {
+                                var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
+
+                                if (action == PayloadSendAction.Skip)
+                                {
+                                    continue; //Skip sending to this client.
+                                }
+
+                                //Create an ACK event so we can track whether this message was received.
+                                NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
+                                lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
+
+                                SendAsync(peer.Socket, messagePacket);
+
+                                messagesSent++;
+                            }
+                        }
+                        catch (SocketException)
+                        {
+                            erroredSockets.Add(peer.Socket);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogException(ex);
+                        }
+                    }
+
+                    if (messagesSent > 0)
+                    {
+                        lock (this) queue.Dequeue();
+                    }
+                }
+            }
+
+            while (erroredSockets.Count > 0)
+            {
+                lock (this)
+                {
+                    CleanupConnection(erroredSockets[0]);
+                    erroredSockets.RemoveAt(0);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Command Packet Handler.
 
         private void PacketPayloadHandler(Peer peer, Packet packet, NMQCommand payload)
         {
@@ -624,6 +735,19 @@ namespace NTDLS.MemQueue
                     else
                     {
                         //Client... what are you ack'ing?
+                    }
+                }
+                //The client is acknowledging the receipt of a command.
+                else if (payload.CommandType == PayloadCommandType.ProcessedAck)
+                {
+                    //Client is letting us know they have processed the message.
+                    if (peer.CurrentMessage?.Message?.MessageId == payload.Message.MessageId)
+                    {
+                        peer.CurrentMessage.Acknowledged = true;
+                    }
+                    else
+                    {
+                        //The message has likely timed out and been removed from the queue.
                     }
                 }
                 //The client is asking that a message be enqueued.
@@ -687,17 +811,10 @@ namespace NTDLS.MemQueue
                 {
                     var ackPayload = new NMQCommand()
                     {
-                        Message = new NMQMessageBase
-                        {
-                            PeerId = payload.Message.PeerId,
-                            MessageId = payload.Message.MessageId,
-                            QueueName = payload.Message.QueueName
-                        },
+                        Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                         CommandType = PayloadCommandType.CommandAck
                     };
-
-                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, ackPayload);
-                    SendAsync(peer.Socket, messagePacket);
+                    SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
                 }
             }
             catch (Exception ex)

@@ -12,7 +12,8 @@ namespace TestHarness.Server
         {
             var server = new NMQServer()
             {
-                StaleItemExpirationSeconds = 600
+                StaleItemExpirationSeconds = 600,
+                BrodcastScheme = BrodcastScheme.Uniform
             };
 
             //These events are 100% unnecessary, just wanted to show some status text.

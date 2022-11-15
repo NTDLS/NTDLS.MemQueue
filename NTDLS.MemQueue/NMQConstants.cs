@@ -4,16 +4,17 @@
     {
         Unspecified,
         Hello,
+        CommandAck,
 
         //Commands sent to a SERVER:
         Enqueue,
         Subscribe,
         UnSubscribe,
         Clear,
+        ProcessedAck,
 
         //Commands sent to a CLIENT:
-        ProcessMessage,
-        CommandAck
+        ProcessMessage
     }
 
     internal static class NMQConstants
@@ -38,7 +39,6 @@
     public enum PayloadSendAction
     {
         Process,
-        Discard,
         Skip
     }
 
@@ -46,5 +46,21 @@
     {
         Process,
         Discard
+    }
+
+    public enum BrodcastScheme
+    {
+        /// <summary>
+        /// The scheme has not been set, the default (Uniform) will be used when started.
+        /// </summary>
+        NotSet,
+        /// <summary>
+        /// Send each message to each subscriber. Ensure that each message has been received and processed by each subscriber before moving to the next message.
+        /// </summary>
+        Uniform,
+        /// <summary>
+        /// Send each message to each subscriber as fast as possible with no regard for acknowledgement or receipt or processing.
+        /// </summary>
+        FireAndForget
     }
 }

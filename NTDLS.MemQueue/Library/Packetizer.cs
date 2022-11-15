@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
+using System.Threading.Tasks;
 
 namespace NTDLS.MemQueue.Library
 {
@@ -127,7 +128,10 @@ namespace NTDLS.MemQueue.Library
 
                     NMQCommand payload = (NMQCommand)Serialization.ByteArrayToObject(payloadBody);
 
-                    processPayload(peer, packet, payload);
+                    Task.Run(() =>
+                    {
+                        processPayload(peer, packet, payload);
+                    });
 
                     //Zero out the consumed portion of the payload buffer - more for fun than anything else.
                     Array.Clear(packet.PayloadBuilder, 0, grossPayloadSize);

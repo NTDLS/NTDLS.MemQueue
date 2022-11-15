@@ -1,5 +1,6 @@
 ﻿using NTDLS.MemQueue;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TestHarness.LoadTest
@@ -26,8 +27,8 @@ namespace TestHarness.LoadTest
                 {
                     var query = new NMQQuery("TestQueue", "Ping");
 
+                    /*
                     messagesSent++;
-
                     //Enqueue a query and wait for the reply.
                     client.QueryAsync(query).ContinueWith((t) =>
                     {
@@ -40,6 +41,7 @@ namespace TestHarness.LoadTest
                             Console.WriteLine($"Something went wrong, failed to send.");
                         }
                     });
+                    */
 
                     //This simply enqueues a one way message, no reply expected.
                     var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
@@ -51,6 +53,7 @@ namespace TestHarness.LoadTest
                 }
 
                 Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{client.OutstandingAcknowledgments}: Dead:{client.PresumedDeadCommandCount}   \r");
+                //Thread.Sleep(100);
             }
 
             client.Disconnect();
@@ -73,10 +76,14 @@ namespace TestHarness.LoadTest
             }
         }
 
-        private static void Client_OnMessageReceived(NMQClient sender, NMQNotification message)
+        private static bool Client_OnMessageReceived(NMQClient sender, NMQNotification message)
         {
             //We receive the message!
             messagesReceived++;
+
+            Thread.Sleep(500);
+
+            return true;
         }
     }
 }

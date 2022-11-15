@@ -88,7 +88,7 @@ namespace NTDLS.MemQueue
         /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
         /// </summary>
         public event MessageReceivedEvent OnMessageReceived;
-        public delegate void MessageReceivedEvent(NMQClient sender, NMQNotification notification);
+        public delegate bool MessageReceivedEvent(NMQClient sender, NMQNotification notification);
 
         /// <summary>
         /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
@@ -253,6 +253,7 @@ namespace NTDLS.MemQueue
 
                     WaitForData(new Peer(_connectSocket));
 
+                    /*
                     if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
                     {
                         lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
@@ -260,6 +261,7 @@ namespace NTDLS.MemQueue
                         _connectSocket = null;
                         return false;
                     }
+                    */
 
                     OnConnected?.Invoke();
 
@@ -293,7 +295,10 @@ namespace NTDLS.MemQueue
             try
             {
                 TCPSendQueueDepth++;
-                socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                if (socket.Connected)
+                {
+                    socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                }
                 Thread.Sleep(1); //This is for everyones wellbeing, only on the client though.
             }
             catch (Exception ex)
@@ -448,7 +453,10 @@ namespace NTDLS.MemQueue
             {
                 Peer peer = (Peer)asyn.AsyncState;
                 socket = peer.Socket;
-                peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
+                if (socket.Connected)
+                {
+                    peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
+                }
 
                 if (peer.Packet.BufferLength == 0)
                 {
@@ -917,6 +925,12 @@ namespace NTDLS.MemQueue
                     if (payload.Message.IsQuery)
                     {
                         OnQueryReceived?.Invoke(this, payload.Message.As<NMQQuery>());
+                        var ackPayload = new NMQCommand()
+                        {
+                            Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
+                            CommandType = PayloadCommandType.ProcessedAck
+                        };
+                        SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
                     }
                     //This message is in reply to a query - match them up.
                     else if (payload.Message.IsReply)
@@ -945,11 +959,26 @@ namespace NTDLS.MemQueue
                         {
                             messageQuerySubscription.PayloadProcessedEvent.WaitOne();
                         }
+
+                        var ackPayload = new NMQCommand()
+                        {
+                            Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
+                            CommandType = PayloadCommandType.ProcessedAck
+                        };
+                        SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
                     }
                     //This is just a plain ol' message.
                     else
                     {
-                        OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>());
+                        if (OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>()) == true)
+                        {
+                            var ackPayload = new NMQCommand()
+                            {
+                                Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
+                                CommandType = PayloadCommandType.ProcessedAck
+                            };
+                            SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                        }
                     }
                 }
                 else
@@ -962,20 +991,12 @@ namespace NTDLS.MemQueue
                 {
                     var ackPayload = new NMQCommand()
                     {
-                        Message = new NMQMessageBase
-                        {
-                            PeerId = payload.Message.PeerId,
-                            MessageId = payload.Message.MessageId,
-                            QueueName = payload.Message.QueueName
-                        },
+                        Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                         CommandType = PayloadCommandType.CommandAck
                     };
-
-                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, ackPayload);
-                    SendAsync(peer.Socket, messagePacket);
+                    SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
                 }
                 #endregion
-
             }
             catch (SocketException)
             {
