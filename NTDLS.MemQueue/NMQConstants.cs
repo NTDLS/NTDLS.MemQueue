@@ -28,6 +28,7 @@
         public const int DEFAULT_STALE_EXPIRATION_SECONDS = 0;
         public const int DEFAULT_PORT = 16117;
         public const int ACK_TIMEOUT_MS = 5000;
+        public const int PROCESS_TIMEOUT_MS = 10000;
     }
 
     public enum ClientConnectAction

@@ -27,7 +27,6 @@ namespace TestHarness.LoadTest
                 {
                     var query = new NMQQuery("TestQueue", "Ping");
 
-                    /*
                     messagesSent++;
                     //Enqueue a query and wait for the reply.
                     client.QueryAsync(query).ContinueWith((t) =>
@@ -41,11 +40,10 @@ namespace TestHarness.LoadTest
                             Console.WriteLine($"Something went wrong, failed to send.");
                         }
                     });
-                    */
 
                     //This simply enqueues a one way message, no reply expected.
-                    var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
-                    client.Enqueue(message);
+                    //var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
+                    //client.Enqueue(message);
                     messagesSent++;
                 }
                 catch
@@ -53,7 +51,7 @@ namespace TestHarness.LoadTest
                 }
 
                 Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{client.OutstandingAcknowledgments}: Dead:{client.PresumedDeadCommandCount}   \r");
-                //Thread.Sleep(100);
+                Thread.Sleep(100);
             }
 
             client.Disconnect();

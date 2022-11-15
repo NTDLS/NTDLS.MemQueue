@@ -21,6 +21,11 @@ namespace NTDLS.MemQueue
         public object Tag { get; set; }
 
         /// <summary>
+        /// When true, the server will drop messages sent to a queue which has no subscribers.
+        /// </summary>
+        public bool DoNotQueueWhenNoConsumers { get; set; } = false;
+
+        /// <summary>
         /// The port that server eas started on.
         /// </summary>
         public object ListenPort { get; private set; }
@@ -67,6 +72,7 @@ namespace NTDLS.MemQueue
         #region Backend Variables.
 
         private Dictionary<string, NMQACKEvent> _ackEvents = new Dictionary<string, NMQACKEvent>();
+        private Dictionary<string, NMQACKEvent> _processedEvents = new Dictionary<string, NMQACKEvent>();
         private bool _continueRunning = false;
         private readonly int _listenBacklog = NMQConstants.DEFAULT_TCPIP_LISTEN_SIZE;
         private Socket _listenSocket;
@@ -105,14 +111,26 @@ namespace NTDLS.MemQueue
         }
 
         /// <summary>
-        /// The number mesages send that the server has yet to receive an acknowledgment to.
+        /// The number commands sent that the server has yet to receive an acknowledgment to receiving.
         /// </summary>
-        public int OutstandingAcknowledgments
+        public int OutstandingCommandAcknowledgments
         {
             get
             {
                 lock (_ackEvents)
                     return _ackEvents.Count();
+            }
+        }
+
+        /// <summary>
+        /// The number of messages sent that a peer has yet to acknowledge processing.
+        /// </summary>
+        public int OutstandingProcessedAcknowledgments
+        {
+            get
+            {
+                lock (_processedEvents)
+                    return _processedEvents.Count();
             }
         }
 
@@ -263,17 +281,28 @@ namespace NTDLS.MemQueue
 
         #region Socket server.
 
-        private void SendAsync(Socket socket, byte[] data)
+        private bool SendAsync(Socket socket, byte[] data)
         {
             try
             {
                 TCPSendQueueDepth++;
-                socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                if (socket.Connected)
+                {
+                    socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                    return true;
+                }
             }
             catch (Exception ex)
             {
                 LogException(ex);
             }
+
+            return false;
+        }
+
+        private bool SendAsync(Socket socket, NMQCommand command)
+        {
+            return SendAsync(socket, Packetizer.AssembleMessagePacket(this, command));
         }
 
         private void SendCallback(IAsyncResult ar)
@@ -292,17 +321,6 @@ namespace NTDLS.MemQueue
             }
 
             TCPSendQueueDepth--;
-        }
-
-        private void BroadcastThread()
-        {
-            //Messaes are broadcast as they are received - but there are instances where we only have sender
-            //  clients and no subscribers so we will need to buffer the messages and periodiacally attempt to broadcast them.
-            while (_continueRunning)
-            {
-                BroadcastMessages();
-                Thread.Sleep(10);
-            }
         }
 
         private void ClientConnectProc(IAsyncResult asyn)
@@ -473,6 +491,17 @@ namespace NTDLS.MemQueue
             lock (this) return _subscriptions[queueName];
         }
 
+        private void BroadcastThread()
+        {
+            //Messaes are broadcast as they are received - but there are instances where we only have sender
+            //  clients and no subscribers so we will need to buffer the messages and periodiacally attempt to broadcast them.
+            while (_continueRunning)
+            {
+                BroadcastMessages();
+                Thread.Sleep(10);
+            }
+        }
+
         private void BroadcastMessages()
         {
             if (Monitor.TryEnter(_broadcastMessagesLock))
@@ -492,15 +521,27 @@ namespace NTDLS.MemQueue
                         queue.Value.RemoveAll(o => now > o.ExpireTime);
                     }
 
-                    DateTime askStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
+                    DateTime ackStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
                     lock (_ackEvents)
                     {
-                        var acks = _ackEvents.Where(o => o.Value.CreatedDate < askStaleTime);
+                        var acks = _ackEvents.Where(o => o.Value.CreatedDate < ackStaleTime);
                         foreach (var ack in acks)
                         {
                             OnCommandAcknowledgementExpired?.Invoke(this, ack.Value.Command.Message);
                             PresumedDeadCommandCount++;
                             _ackEvents.Remove(ack.Key);
+                        }
+                    }
+
+                    DateTime processedStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.PROCESS_TIMEOUT_MS);
+                    lock (_processedEvents)
+                    {
+                        var acks = _processedEvents.Where(o => o.Value.CreatedDate < processedStaleTime);
+                        foreach (var ack in acks)
+                        {
+                            OnCommandAcknowledgementExpired?.Invoke(this, ack.Value.Command.Message);
+                            PresumedDeadCommandCount++;
+                            _processedEvents.Remove(ack.Key);
                         }
                     }
 
@@ -551,6 +592,10 @@ namespace NTDLS.MemQueue
                 var peers = GetSubscriptionPeers(queueName);
                 if (peers == null || peers.Count == 0)
                 {
+                    if (DoNotQueueWhenNoConsumers)
+                    {
+                        queue.Clear();
+                    }
                     continue;
                 }
 
@@ -568,12 +613,9 @@ namespace NTDLS.MemQueue
                             CommandType = PayloadCommandType.ProcessMessage
                         };
 
-                        byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
-
-                        if (peer.Socket.Connected && messagePacket != null)
+                        if (peer.Socket.Connected)
                         {
                             var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
-
                             if (action == PayloadSendAction.Skip)
                             {
                                 //Skip sending to this client.
@@ -583,11 +625,14 @@ namespace NTDLS.MemQueue
                             {
                                 //Create an ACK event so we can track whether this message was received.
                                 NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
-                                lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
-                                SendAsync(peer.Socket, messagePacket);
-
+                                lock (_processedEvents) _processedEvents.Add(ackEvent.Key, ackEvent);
+                                peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
                                 peer.CurrentMessage.Sent = true;
                             }
+                        }
+                        else
+                        {
+                            peer.CurrentMessage.Errored = true;
                         }
                     }
                 }
@@ -625,6 +670,10 @@ namespace NTDLS.MemQueue
                 var peers = GetSubscriptionPeers(queueName);
                 if (peers == null || peers.Count == 0)
                 {
+                    if (DoNotQueueWhenNoConsumers)
+                    {
+                        queue.Clear();
+                    }
                     continue;
                 }
 
@@ -645,9 +694,7 @@ namespace NTDLS.MemQueue
                                 CommandType = PayloadCommandType.ProcessMessage
                             };
 
-                            byte[] messagePacket = Packetizer.AssembleMessagePacket(this, payload);
-
-                            if (peer.Socket.Connected && messagePacket != null)
+                            if (peer.Socket.Connected)
                             {
                                 var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
 
@@ -659,8 +706,7 @@ namespace NTDLS.MemQueue
                                 //Create an ACK event so we can track whether this message was received.
                                 NMQACKEvent ackEvent = new NMQACKEvent(peer, payload);
                                 lock (_ackEvents) _ackEvents.Add(ackEvent.Key, ackEvent);
-
-                                SendAsync(peer.Socket, messagePacket);
+                                SendAsync(peer.Socket, payload);
 
                                 messagesSent++;
                             }
@@ -714,15 +760,12 @@ namespace NTDLS.MemQueue
                 {
                     peer.PeerId = payload.Message.PeerId;
 
-                    var replyPayload = new NMQCommand()
+                    //Wave back.
+                    SendAsync(peer.Socket, new NMQCommand()
                     {
                         Message = new NMQMessageBase(peer.PeerId, Guid.NewGuid()),
                         CommandType = PayloadCommandType.Hello
-                    };
-
-                    //Wave back.
-                    byte[] messagePacket = Packetizer.AssembleMessagePacket(this, replyPayload);
-                    SendAsync(peer.Socket, messagePacket);
+                    });
                 }
                 //The client is acknowledging the receipt of a command.
                 else if (payload.CommandType == PayloadCommandType.CommandAck)
@@ -740,6 +783,16 @@ namespace NTDLS.MemQueue
                 //The client is acknowledging the receipt of a command.
                 else if (payload.CommandType == PayloadCommandType.ProcessedAck)
                 {
+                    var key = $"{peer.PeerId}-{payload.Message.MessageId}";
+                    if (_processedEvents.ContainsKey(key))
+                    {
+                        lock (_processedEvents) _processedEvents.Remove(key);
+                    }
+                    else
+                    {
+                        //Client... what are you ack'ing?
+                    }
+
                     //Client is letting us know they have processed the message.
                     if (peer.CurrentMessage?.Message?.MessageId == payload.Message.MessageId)
                     {
@@ -809,12 +862,11 @@ namespace NTDLS.MemQueue
                 //Acknoledge commands. Even if the client doesnt want one, it will safely ignore it.
                 if (payload.CommandType != PayloadCommandType.CommandAck)
                 {
-                    var ackPayload = new NMQCommand()
+                    SendAsync(peer.Socket, new NMQCommand()
                     {
                         Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                         CommandType = PayloadCommandType.CommandAck
-                    };
-                    SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                    });
                 }
             }
             catch (Exception ex)

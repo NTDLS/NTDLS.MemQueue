@@ -1,5 +1,6 @@
 ﻿using NTDLS.MemQueue;
 using System;
+using System.Threading;
 
 namespace TestHarness.Server
 {
@@ -27,7 +28,12 @@ namespace TestHarness.Server
             Console.WriteLine($"Awaiting connections...");
             Console.WriteLine("...");
             Console.WriteLine("Press any key to shutdown.");
-            Console.ReadLine();
+
+            while (!Console.KeyAvailable) //Press any key to close.
+            {
+                Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, QDepth: {server.QueueDepth()}, Unacknowledged:{server.OutstandingCommandAcknowledgments}, Dead:{server.PresumedDeadCommandCount}   \r");
+                Thread.Sleep(100);
+            }
 
             server.Stop(); //Stop the server.
         }
@@ -35,14 +41,12 @@ namespace TestHarness.Server
         private static PayloadSendAction Server_OnBeforeCommandSend(NMQServer sender, NMQMessageBase message)
         {
             messagesSent++;
-            Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, QDepth: {sender.QueueDepth()}, Unacknowledged:{sender.OutstandingAcknowledgments}, Dead:{sender.PresumedDeadCommandCount}   \r");
             return PayloadSendAction.Process;
         }
 
         private static PayloadReceiveAction Server_OnBeforeCommandReceive(NMQServer sender, NMQMessageBase message)
         {
             messagesReceived++;
-            Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, QDepth: {sender.QueueDepth()}, Unacknowledged:{sender.OutstandingAcknowledgments}, Dead:{sender.PresumedDeadCommandCount}   \r");
             return PayloadReceiveAction.Process;
         }
 

@@ -30,12 +30,12 @@ namespace NTDLS.MemQueue
         public Guid PeerId { get; private set; } = Guid.NewGuid();
 
         /// <summary>
-        /// The number of commands that have been dispatched and have not been acknoledgled by the server.
+        /// The number of commands that have been dispatched and have not been acknowledged by the server.
         /// </summary>
         public int PresumedDeadCommandCount { get; set; }
 
         /// <summary>
-        /// The number mesages send that the server has yet to receive an acknowledgment to.
+        /// The number commands that the client has yet to receive an acknowledgment to.
         /// </summary>
         public int OutstandingAcknowledgments
         {
@@ -50,7 +50,7 @@ namespace NTDLS.MemQueue
 
         private Dictionary<string, NMQWaitEvent> _ackWaitEvents = new Dictionary<string, NMQWaitEvent>();
         private bool _continueRunning = false;
-        private Socket _connectSocket;
+        private Socket _peerSocket;
         private AsyncCallback _onDataReceivedCallback;
         private IPAddress _serverIpAddress;
         private int _serverPort;
@@ -232,10 +232,10 @@ namespace NTDLS.MemQueue
 
             try
             {
-                _connectSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                _peerSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
-                _connectSocket.Connect(new IPEndPoint(ipAddress, port));
-                if (_connectSocket != null && _connectSocket.Connected)
+                _peerSocket.Connect(new IPEndPoint(ipAddress, port));
+                if (_peerSocket != null && _peerSocket.Connected)
                 {
                     var payload = new NMQCommand()
                     {
@@ -249,19 +249,17 @@ namespace NTDLS.MemQueue
                     NMQWaitEvent waitEvent = new NMQWaitEvent(payload.Message.MessageId);
                     lock (_ackWaitEvents) _ackWaitEvents.Add($"{waitEvent.MessageId}", waitEvent);
 
-                    SendAsync(_connectSocket, messagePacket);
+                    SendAsync(messagePacket);
 
-                    WaitForData(new Peer(_connectSocket));
+                    WaitForData(new Peer(_peerSocket));
 
-                    /*
                     if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
                     {
                         lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
-                        _connectSocket?.Dispose();
-                        _connectSocket = null;
+                        _peerSocket?.Dispose();
+                        _peerSocket = null;
                         return false;
                     }
-                    */
 
                     OnConnected?.Invoke();
 
@@ -270,8 +268,8 @@ namespace NTDLS.MemQueue
             }
             catch
             {
-                _connectSocket?.Dispose();
-                _connectSocket = null;
+                _peerSocket?.Dispose();
+                _peerSocket = null;
             }
 
             return false;
@@ -290,14 +288,20 @@ namespace NTDLS.MemQueue
 
         #region Socket Client.
 
-        private void SendAsync(Socket socket, byte[] data)
+
+        private void SendAsync(NMQCommand command)
+        {
+            SendAsync(Packetizer.AssembleMessagePacket(this, command));
+        }
+
+        private void SendAsync(byte[] data)
         {
             try
             {
                 TCPSendQueueDepth++;
-                if (socket.Connected)
+                if (_peerSocket.Connected)
                 {
-                    socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), socket);
+                    _peerSocket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), _peerSocket);
                 }
                 Thread.Sleep(1); //This is for everyones wellbeing, only on the client though.
             }
@@ -329,18 +333,18 @@ namespace NTDLS.MemQueue
         {
             try
             {
-                if (_connectSocket != null)
+                if (_peerSocket != null)
                 {
                     OnDisconnected?.Invoke(this);
 
                     try
                     {
-                        _connectSocket?.Shutdown(SocketShutdown.Both);
+                        _peerSocket?.Shutdown(SocketShutdown.Both);
                     }
                     finally
                     {
-                        _connectSocket?.Close();
-                        _connectSocket?.Dispose();
+                        _peerSocket?.Close();
+                        _peerSocket?.Dispose();
                     }
                 }
             }
@@ -365,7 +369,7 @@ namespace NTDLS.MemQueue
                 //Discard.
             }
 
-            _connectSocket = null;
+            _peerSocket = null;
         }
 
         private void MonitorThreadProc(object data)
@@ -393,7 +397,7 @@ namespace NTDLS.MemQueue
 
                         try
                         {
-                            if (_connectSocket == null || _connectSocket.Connected == false)
+                            if (_peerSocket == null || _peerSocket.Connected == false)
                             {
                                 if (Connect(_serverIpAddress, _serverPort, false))
                                 {
@@ -503,7 +507,7 @@ namespace NTDLS.MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_connectSocket == null || _connectSocket.Connected == false)
+            if (_peerSocket == null || _peerSocket.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -580,7 +584,7 @@ namespace NTDLS.MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_connectSocket == null || _connectSocket.Connected == false)
+            if (_peerSocket == null || _peerSocket.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -643,7 +647,7 @@ namespace NTDLS.MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_connectSocket == null || _connectSocket.Connected == false)
+            if (_peerSocket == null || _peerSocket.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -685,7 +689,7 @@ namespace NTDLS.MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_connectSocket == null || _connectSocket.Connected == false)
+            if (_peerSocket == null || _peerSocket.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -749,12 +753,10 @@ namespace NTDLS.MemQueue
         /// <returns>True upon successful enqueue.</returns>
         private bool EnqueueEx(NMQCommand payload)
         {
-            if (_connectSocket == null || _connectSocket.Connected == false)
+            if (_peerSocket == null || _peerSocket.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
-
-            var messagePacket = Packetizer.AssembleMessagePacket(this, payload);
 
             try
             {
@@ -765,15 +767,12 @@ namespace NTDLS.MemQueue
 
                 lock (_ackWaitEvents) _ackWaitEvents.Add($"{waitEvent.MessageId}", waitEvent);
 
-                SendAsync(_connectSocket, messagePacket);
+                SendAsync(payload);
                 OnEnqueued?.Invoke(this, payload.Message);
 
-                if (payload.Message.IsReply == false)
+                if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
                 {
-                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
-                    {
-                        lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
-                    }
+                    lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
                 }
             }
             catch (SocketException)
@@ -810,9 +809,9 @@ namespace NTDLS.MemQueue
                     _subscribedQueues.Add(queueName);
                 }
 
-                if (_connectSocket != null && _connectSocket.Connected)
+                if (_peerSocket != null && _peerSocket.Connected)
                 {
-                    _connectSocket.Send(messagePacket);
+                    _peerSocket.Send(messagePacket);
                     OnQueueSubscribed?.Invoke(this, queueName);
                 }
             }
@@ -845,9 +844,9 @@ namespace NTDLS.MemQueue
             {
                 _subscribedQueues.Remove(queueName);
 
-                if (_connectSocket != null && _connectSocket.Connected)
+                if (_peerSocket != null && _peerSocket.Connected)
                 {
-                    _connectSocket.Send(messagePacket);
+                    _peerSocket.Send(messagePacket);
                     OnQueueUnsubscribed?.Invoke(this, queueName);
                 }
             }
@@ -878,9 +877,9 @@ namespace NTDLS.MemQueue
 
             try
             {
-                if (_connectSocket != null && _connectSocket.Connected)
+                if (_peerSocket != null && _peerSocket.Connected)
                 {
-                    _connectSocket.Send(messagePacket);
+                    _peerSocket.Send(messagePacket);
                     OnQueueCleared?.Invoke(this, queueName);
                 }
             }
@@ -925,12 +924,11 @@ namespace NTDLS.MemQueue
                     if (payload.Message.IsQuery)
                     {
                         OnQueryReceived?.Invoke(this, payload.Message.As<NMQQuery>());
-                        var ackPayload = new NMQCommand()
+                        SendAsync(new NMQCommand()
                         {
                             Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                             CommandType = PayloadCommandType.ProcessedAck
-                        };
-                        SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                        });
                     }
                     //This message is in reply to a query - match them up.
                     else if (payload.Message.IsReply)
@@ -960,24 +958,22 @@ namespace NTDLS.MemQueue
                             messageQuerySubscription.PayloadProcessedEvent.WaitOne();
                         }
 
-                        var ackPayload = new NMQCommand()
+                        SendAsync(new NMQCommand()
                         {
                             Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                             CommandType = PayloadCommandType.ProcessedAck
-                        };
-                        SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                        });
                     }
                     //This is just a plain ol' message.
                     else
                     {
                         if (OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>()) == true)
                         {
-                            var ackPayload = new NMQCommand()
+                            SendAsync(new NMQCommand()
                             {
                                 Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                                 CommandType = PayloadCommandType.ProcessedAck
-                            };
-                            SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                            });
                         }
                     }
                 }
@@ -989,12 +985,11 @@ namespace NTDLS.MemQueue
                 #region It doesnt hurt to sent an ACK for each message.
                 if (payload.CommandType != PayloadCommandType.CommandAck)
                 {
-                    var ackPayload = new NMQCommand()
+                    SendAsync(new NMQCommand()
                     {
                         Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                         CommandType = PayloadCommandType.CommandAck
-                    };
-                    SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, ackPayload));
+                    });
                 }
                 #endregion
             }
