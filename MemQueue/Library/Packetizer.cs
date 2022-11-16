@@ -3,7 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Threading.Tasks;
 
-namespace NTDLS.MemQueue.Library
+namespace MemQueue.Library
 {
     internal static class Packetizer
     {

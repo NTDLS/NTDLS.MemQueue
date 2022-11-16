@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace NTDLS.MemQueue.Library
+namespace MemQueue.Library
 {
     internal class Packet
     {

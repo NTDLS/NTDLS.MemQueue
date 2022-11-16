@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace NTDLS.MemQueue
+namespace MemQueue
 {
     /// <summary>
     /// Maps queries to replies so they can be routed accordingly.

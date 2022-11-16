@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace NTDLS.MemQueue.Library
+namespace MemQueue.Library
 {
     internal static class CRC16
     {

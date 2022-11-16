@@ -1,9 +1,9 @@
 
 .vs/
 
-NTDLS.MemQueue/bin/
+MemQueue/bin/
 
-NTDLS.MemQueue/obj/
+MemQueue/obj/
 
 TestHarness.Chat/bin/
 

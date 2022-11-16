@@ -1,4 +1,4 @@
-﻿using NTDLS.MemQueue.Library;
+﻿using MemQueue.Library;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,7 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
-namespace NTDLS.MemQueue
+namespace MemQueue
 {
     /// <summary>
     /// Server class that listens for clients and routes messages between them.

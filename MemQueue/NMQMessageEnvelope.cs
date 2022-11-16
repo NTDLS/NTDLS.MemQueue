@@ -1,4 +1,4 @@
-﻿namespace NTDLS.MemQueue
+﻿namespace MemQueue
 {
     internal class NMQMessageEnvelope
     {

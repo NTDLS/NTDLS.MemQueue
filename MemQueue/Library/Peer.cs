@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Net.Sockets;
 
-namespace NTDLS.MemQueue.Library
+namespace MemQueue.Library
 {
     internal class Peer
     {

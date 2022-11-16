@@ -1,4 +1,4 @@
-﻿using NTDLS.MemQueue;
+﻿using MemQueue;
 using System;
 using System.Threading;
 using System.Threading.Tasks;

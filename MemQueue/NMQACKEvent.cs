@@ -1,7 +1,7 @@
-﻿using NTDLS.MemQueue.Library;
+﻿using MemQueue.Library;
 using System;
 
-namespace NTDLS.MemQueue
+namespace MemQueue
 {
     internal class NMQACKEvent
     {
