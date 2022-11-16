@@ -91,8 +91,8 @@ namespace MemQueue
         /// <summary>
         /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
         /// </summary>
-        public event MessageReceivedEvent OnMessageReceived;
-        public delegate void MessageReceivedEvent(NMQClient sender, NMQNotification notification);
+        public event NotificationReceivedEvent OnNotificationReceived;
+        public delegate void NotificationReceivedEvent(NMQClient sender, NMQNotification notification);
 
         /// <summary>
         /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
@@ -975,7 +975,7 @@ namespace MemQueue
                     {
                         Task.Run(() =>
                         {
-                            OnMessageReceived?.Invoke(this, payload.Message.As<NMQNotification>());
+                            OnNotificationReceived?.Invoke(this, payload.Message.As<NMQNotification>());
                         });
 
                         SendAsync(new NMQCommand()

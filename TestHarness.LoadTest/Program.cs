@@ -14,7 +14,7 @@ namespace TestHarness.LoadTest
         {
             var client = new NMQClient();
             client.OnExceptionOccured += Client_OnExceptionOccured;
-            client.OnMessageReceived += Client_OnMessageReceived;
+            client.OnNotificationReceived += Client_OnNotificationReceived;
             client.OnQueryReceived += Client_OnQueryReceived;
 
             client.Connect("localhost");
@@ -74,7 +74,7 @@ namespace TestHarness.LoadTest
             }
         }
 
-        private static void Client_OnMessageReceived(NMQClient sender, NMQNotification message)
+        private static void Client_OnNotificationReceived(NMQClient sender, NMQNotification notification)
         {
             //We receive the message!
             messagesReceived++;
