@@ -337,9 +337,17 @@ namespace MemQueue
             return false;
         }
 
-        private bool SendAsync(Socket socket, NMQCommand command)
+        private bool SendAsync(Peer peer, NMQCommand command)
         {
-            return SendAsync(socket, Packetizer.AssembleMessagePacket(this, command));
+            var result = SendAsync(peer.Socket, Packetizer.AssembleMessagePacket(this, command));
+            if (result)
+            {
+                if (command.CommandType != PayloadCommandType.CommandAck && command.CommandType != PayloadCommandType.ProcessedAck)
+                {
+                    AddCommandAckEvent(peer, command);
+                }
+            }
+            return result;
         }
 
         private void SendCallback(IAsyncResult ar)
@@ -648,16 +656,13 @@ namespace MemQueue
                                 }
                                 else
                                 {
-                                    if (BrodcastScheme == BrodcastScheme.Uniform)
+                                    //Create an process event so we can track whether this message was received before we remove it from the queue.
+                                    AddProcessedAckEvent(peer, payload);
+                                    peer.CurrentMessage.Errored = !SendAsync(peer, payload);
+                                    peer.CurrentMessage.Sent = true;
+
+                                    if (BrodcastScheme == BrodcastScheme.FireAndForget)
                                     {
-                                        //Create an process event so we can track whether this message was received before we remove it from the queue.
-                                        AddProcessedAckEvent(peer, payload);
-                                        peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
-                                        peer.CurrentMessage.Sent = true;
-                                    }
-                                    else if (BrodcastScheme == BrodcastScheme.FireAndForget)
-                                    {
-                                        peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
                                         peer.CurrentMessage.Acknowledged = !peer.CurrentMessage.Errored;
                                     }
                                 }
@@ -706,7 +711,7 @@ namespace MemQueue
                     peer.PeerId = payload.Message.PeerId;
 
                     //Wave back.
-                    SendAsync(peer.Socket, new NMQCommand()
+                    SendAsync(peer, new NMQCommand()
                     {
                         Message = new NMQMessageBase(peer.PeerId, Guid.NewGuid()),
                         CommandType = PayloadCommandType.Hello
@@ -807,7 +812,7 @@ namespace MemQueue
                 //Acknoledge commands. Even if the client doesnt want one, it will safely ignore it.
                 if (payload.CommandType != PayloadCommandType.CommandAck && payload.CommandType != PayloadCommandType.ProcessedAck)
                 {
-                    SendAsync(peer.Socket, new NMQCommand()
+                    SendAsync(peer, new NMQCommand()
                     {
                         Message = new NMQMessageBase(payload.Message.PeerId, payload.Message.QueueName, payload.Message.MessageId),
                         CommandType = PayloadCommandType.CommandAck
