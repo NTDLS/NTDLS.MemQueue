@@ -13,6 +13,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Company>NetworkDLS</Company>
+    <AssemblyVersion>1.0.1</AssemblyVersion>
+    <FileVersion>1.0.1</FileVersion>
+    <version>1.0.1</version>
   </PropertyGroup>
 
 </Project>

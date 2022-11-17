@@ -12,14 +12,13 @@ namespace TestHarness.LoadTest
 
         static void Main()
         {
-            var client = new NMQClient();
-            client.OnExceptionOccured += (sender, exception) => { Console.WriteLine($"Exception {exception.Message}"); };
-            client.OnNotificationReceived += Client_OnNotificationReceived;
-            client.OnQueryReceived += Client_OnQueryReceived;
+            var local = new NMQLocalOnly();
 
-            client.Connect("localhost");
+            local.Client.OnExceptionOccured += (sender, exception) => { Console.WriteLine($"Exception {exception.Message}"); };
+            local.Client.OnNotificationReceived += Client_OnNotificationReceived;
+            local.Client.OnQueryReceived += Client_OnQueryReceived;
 
-            client.Subscribe("TestQueue"); //We have to subscribe to a queue, otherwise we wont receive anything.
+            local.Client.Subscribe("TestQueue"); //We have to subscribe to a queue, otherwise we wont receive anything.
 
             while (!Console.KeyAvailable) //Press any key to close.
             {
@@ -29,8 +28,8 @@ namespace TestHarness.LoadTest
 
                     messagesSent++;
 
-                    //Enqueue a query and wait for the reply.
-                    client.QueryAsync(query).ContinueWith((t) =>
+                    //Enqueue a query and waits for the reply.
+                    local.Client.QueryAsync(query).ContinueWith((t) =>
                     {
                         if (t.Status == TaskStatus.RanToCompletion && t.Result != null)
                         {
@@ -44,18 +43,18 @@ namespace TestHarness.LoadTest
 
                     //This simply enqueues a one way message, no reply expected.
                     var message = new NMQNotification("TestQueue", "TestLabel", $"This is a message sent at {DateTime.Now:u}!");
-                    client.Enqueue(message);
+                    local.Client.Enqueue(message);
                     messagesSent++;
                 }
                 catch
                 {
                 }
 
-                Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{client.OutstandingAcknowledgments}: Dead:{client.PresumedDeadCommandCount}   \r");
+                Console.Write($"Sent: {messagesSent}, Rcvd: {messagesReceived}, Unacknowledged:{local.Client.OutstandingAcknowledgments}: Dead:{local.Client.PresumedDeadCommandCount}   \r");
                 Thread.Sleep(10);
             }
 
-            client.Disconnect();
+            local.Client.Disconnect();
         }
 
         private static NMQQueryReplyResult Client_OnQueryReceived(NMQClient sender, NMQQuery query)
@@ -72,9 +71,7 @@ namespace TestHarness.LoadTest
 
         private static void Client_OnNotificationReceived(NMQClient sender, NMQNotification notification)
         {
-            //We receive the message!
             messagesReceived++;
-            //Thread.Sleep(100);
         }
     }
 }

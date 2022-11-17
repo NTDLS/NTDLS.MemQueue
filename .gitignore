@@ -20,3 +20,19 @@ TestHarness.LoadTest/bin/
 NTDLS.MemQueue/bin/
 
 NTDLS.MemQueue/obj/
+
+TestHarness.Chat.LocalOnly/bin/
+
+TestHarness.Chat.LocalOnly/obj/
+
+TestHarness.Chat.LocalOnly.Options/bin/
+
+TestHarness.Chat.LocalOnly.Options/obj/
+
+TestHarness.Client.StressTest/bin/
+
+TestHarness.Client.StressTest/obj/
+
+TestHarness.Client.StressTest.LocalOnly/bin/
+
+TestHarness.Client.StressTest.LocalOnly/obj/
