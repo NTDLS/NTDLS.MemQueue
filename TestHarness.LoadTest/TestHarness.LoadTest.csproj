@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MemQueue\MemQueue.csproj" />
+    <ProjectReference Include="..\MemQueue\NTDLS.MemQueue.csproj" />
   </ItemGroup>
 
 </Project>

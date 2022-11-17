@@ -1,9 +1,8 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Threading.Tasks;
 
-namespace MemQueue.Library
+namespace NTDLS.MemQueue.Library
 {
     internal static class Packetizer
     {

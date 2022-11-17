@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace MemQueue.Library
+﻿namespace NTDLS.MemQueue.Library
 {
     internal class Packet
     {

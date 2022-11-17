@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace MemQueue.Library
+namespace NTDLS.MemQueue.Library
 {
     public class ListQueue<T> : List<T>
     {

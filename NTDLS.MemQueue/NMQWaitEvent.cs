@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace MemQueue
+namespace NTDLS.MemQueue
 {
     internal class NMQWaitEvent
     {

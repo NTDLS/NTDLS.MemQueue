@@ -1,4 +1,4 @@
-﻿using MemQueue;
+﻿using NTDLS.MemQueue;
 using System;
 
 namespace TestHarness.Chat

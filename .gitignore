@@ -16,3 +16,7 @@ TestHarness.Server/obj/
 TestHarness.LoadTest/obj/
 
 TestHarness.LoadTest/bin/
+
+NTDLS.MemQueue/bin/
+
+NTDLS.MemQueue/obj/

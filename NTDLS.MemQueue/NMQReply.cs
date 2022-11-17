@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MemQueue
+namespace NTDLS.MemQueue
 {
     /// <summary>
     /// Represents a reply to a query.

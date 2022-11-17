@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MemQueue
+namespace NTDLS.MemQueue
 {
     /// <summary>
     /// Base for all messages, queries and replies.

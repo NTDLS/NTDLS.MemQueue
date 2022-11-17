@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MemQueue
+namespace NTDLS.MemQueue
 {
     /// <summary>
     /// Represents a notification message that does not expect a reply.

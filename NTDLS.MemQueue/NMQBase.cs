@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MemQueue
+namespace NTDLS.MemQueue
 {
     /// <summary>
     /// Base class for NMQClient and NMQServer.

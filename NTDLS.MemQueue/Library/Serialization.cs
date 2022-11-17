@@ -2,7 +2,7 @@
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace MemQueue.Library
+namespace NTDLS.MemQueue.Library
 {
     public static class Serialization
     {
@@ -22,4 +22,3 @@ namespace MemQueue.Library
         }
     }
 }
-
