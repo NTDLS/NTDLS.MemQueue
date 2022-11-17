@@ -35,7 +35,7 @@ namespace NTDLS.MemQueue
         {
             get
             {
-                return _key
+                return _key;
             }
         }
     }
