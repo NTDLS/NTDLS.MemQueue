@@ -3,6 +3,16 @@
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>NTDLS.MemQueue</Title>
+    <Copyright>Copyright © 2023 NetworkDLS</Copyright>
+    <Description>In memory non-persistent message queue with notifications/messages, query/reply support and several message boradcast schemes. Intended for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.</Description>
+    <PackageProjectUrl>https://github.com/NTDLS/NTDLS.MemQueue</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/NTDLS/NTDLS.MemQueue</RepositoryUrl>
+    <PackageTags>ipc;message-queue;inter-process-communication;tcp-ip;message-broker;mq;</PackageTags>
+    <PackageReleaseNotes>Initial release.</PackageReleaseNotes>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Company>NetworkDLS</Company>
   </PropertyGroup>
 
 </Project>
