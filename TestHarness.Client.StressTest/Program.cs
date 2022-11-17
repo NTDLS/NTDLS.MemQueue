@@ -73,9 +73,7 @@ namespace TestHarness.LoadTest
 
         private static void Client_OnNotificationReceived(NMQClient sender, NMQNotification notification)
         {
-            //We receive the message!
             messagesReceived++;
-            //Thread.Sleep(100);
         }
     }
 }

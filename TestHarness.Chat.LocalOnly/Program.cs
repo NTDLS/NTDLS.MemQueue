@@ -7,17 +7,17 @@ namespace TestHarness.Chat
     {
         static void Main()
         {
-            var queue = new NMQLocalOnly(); //Manage the server and the client for us, default port.
+            var local = new NMQLocalOnly(); //Manage the server and the client for us, default port.
 
-            queue.Client.OnNotificationReceived += Client_OnNotificationReceived;
-            queue.Client.Subscribe("Chatroom");
+            local.Client.OnNotificationReceived += Client_OnNotificationReceived;
+            local.Client.Subscribe("Chatroom"); //Subscribe to the queue. If it does not exist, it will be created.
 
             Console.WriteLine("Be sure to open more than one chat console...");
 
             while (true)
             {
                 var text = Console.ReadLine();
-                queue.Client.Enqueue(new NMQNotification("Chatroom", text));
+                local.Client.Enqueue(new NMQNotification("Chatroom", text));
             }
         }
 

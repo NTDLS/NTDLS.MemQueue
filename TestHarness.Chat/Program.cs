@@ -12,8 +12,7 @@ namespace TestHarness.Chat
             client.OnNotificationReceived += Client_OnMessageReceived;
             
             client.Connect("localhost"); //Connect to the local host, make sure that [TestHarness.Server] is running.
-
-            client.Subscribe("Chatroom");
+            client.Subscribe("Chatroom"); //Subscribe to the queue. If it does not exist, it will be created.
 
             Console.WriteLine("Be sure to open more than one chat console...");
 
