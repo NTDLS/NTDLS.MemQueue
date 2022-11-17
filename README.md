@@ -1,5 +1,5 @@
 # MemQueue
-In memory non-persistent message queue with messaging and query/reply support for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
+In memory non-persistent message queue with messaging, query/reply support and at least two message boradcast schemes for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
 
 Did I mention it has no external dependenies? Not even json. ¯\\_(ツ)_/¯
 
@@ -10,7 +10,7 @@ Did I mention it has no external dependenies? Not even json. ¯\\_(ツ)_/¯
 >
 >Running the server is literally two lines of code and can be run in the same process as the client.
 >The server does not have to be dedicated either, it can eimply be one of the process that is involved in inner-process-communication.
-```
+```csharp
 using MemQueue;
 
 internal class Program
@@ -32,7 +32,7 @@ internal class Program
 >
 >Enqueuing a notification (as we call them) is a one way message that is broadcast to all connected peer that have
 >subscribed to the queue.
-```
+```csharp
 using MemQueue;
 using System;
 
@@ -53,7 +53,7 @@ internal class Program
 >:eyes:	**Receiving a notification message:**
 >
 >Receiving a notification is easy. If you are subscribed to the queue, you will receive the message. Further messages will be held until the event method returns.
-```
+```csharp
 using MemQueue;
 using System;
 
@@ -80,7 +80,7 @@ internal class Program
 >
 >You can also enque a query. The query will be received by a connected peer that is subscribed to the queue,
 >respond to the query and you will receive the reply in code.
-```
+```csharp
 using MemQueue;
 using System;
 using System.Threading.Tasks;
@@ -112,7 +112,7 @@ internal class Program
 >:massage_man:	**Receiving a query and replying to it:**
 >
 >Receiving a query and responding to it is easy. The server handles all the routing.
-```
+```csharp
 using MemQueue;
 using System;
 
