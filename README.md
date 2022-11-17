@@ -1,5 +1,5 @@
 # MemQueue
-In memory non-persistent message queue with messaging, query/reply support and at least two message boradcast schemes for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
+In memory non-persistent message queue with notifications/messages, query/reply support and several message boradcast schemes. Intended for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
 
 Did I mention it has no external dependenies? Not even json. ¯\\_(ツ)_/¯
 
