@@ -4,6 +4,10 @@ using System.IO.Compression;
 
 namespace NTDLS.MemQueue.Library
 {
+    /// <summary>
+    /// TCP packets can be fragmented or combined. The packetizer rebuilds what was originally
+    /// sent via the TCP send() call, provides compression and also performs a CRC check.
+    /// </summary>
     internal static class Packetizer
     {
         public delegate void ProcessPayloadCallback(Peer peer, NMQCommand payload);
@@ -12,7 +16,7 @@ namespace NTDLS.MemQueue.Library
         {
             try
             {
-                var payloadBody = Serialization.ObjectToByteArray(payload);
+                var payloadBody = Serialization.ToByteArray(payload);
                 var payloadBytes = Compress(payloadBody);
                 var grossPacketSize = payloadBytes.Length + NMQPacketizer.PACKET_HEADER_SIZE;
                 var packetBytes = new byte[grossPacketSize];
@@ -125,7 +129,7 @@ namespace NTDLS.MemQueue.Library
 
                     var payloadBody = Decompress(payloadBytes);
 
-                    var payload = (NMQCommand)Serialization.ByteArrayToObject(payloadBody);
+                    var payload = Serialization.ToObject<NMQCommand>(payloadBody);
 
                     processPayload(peer, payload);
 
