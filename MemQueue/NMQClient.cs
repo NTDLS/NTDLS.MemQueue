@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection.PortableExecutable;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,6 +16,11 @@ namespace MemQueue
     public class NMQClient : NMQBase
     {
         #region Public Properties.
+
+        /// <summary>
+        /// The time in milliseconds to wait for an acknowledgement that a dispatched request has been received.
+        /// </summary>
+        public int AckTimeout { get; set; } = NMQConstants.DEFAULT_ACK_TIMEOUT_MS;
 
         /// <summary>
         /// User data, use as you will.
@@ -65,6 +71,7 @@ namespace MemQueue
         #endregion
 
         #region Events.
+
         public override void LogException(Exception ex)
         {
             OnExceptionOccured?.Invoke(this, ex);
@@ -307,7 +314,7 @@ namespace MemQueue
 
                     WaitForData(_peer);
 
-                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                    if (waitEvent.WaitOne(AckTimeout) == false)
                     {
                         lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
                         _peer?.Socket?.Dispose();
@@ -437,10 +444,10 @@ namespace MemQueue
                     {
                         try
                         {
-                            DateTime askStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
+                            DateTime ackStaleTime = DateTime.UtcNow.AddMilliseconds(-AckTimeout);
                             lock (_ackWaitEvents)
                             {
-                                var ackKeys = _ackWaitEvents.Where(o => o.Value.CreatedDate < askStaleTime).Select(o => o.Key);
+                                var ackKeys = _ackWaitEvents.Where(o => o.Value.CreatedDate < ackStaleTime).Select(o => o.Key);
                                 foreach (var key in ackKeys)
                                 {
                                     PresumedDeadCommandCount++;
@@ -828,7 +835,7 @@ namespace MemQueue
                 //Waiting for a ACK to a reply causes a deadlock.
                 if (payload.Message.IsReply == false)
                 {
-                    if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
+                    if (waitEvent.WaitOne(AckTimeout) == false)
                     {
                         lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
                     }

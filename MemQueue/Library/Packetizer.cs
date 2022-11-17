@@ -15,14 +15,14 @@ namespace MemQueue.Library
             {
                 var payloadBody = Serialization.ObjectToByteArray(payload);
                 var payloadBytes = Compress(payloadBody);
-                var grossPacketSize = payloadBytes.Length + NMQConstants.PAYLOAD_HEADER_SIZE;
+                var grossPacketSize = payloadBytes.Length + NMQPacketizer.PACKET_HEADER_SIZE;
                 var packetBytes = new byte[grossPacketSize];
                 var payloadCrc = CRC16.ComputeChecksum(payloadBytes);
 
-                Buffer.BlockCopy(BitConverter.GetBytes(NMQConstants.PAYLOAD_DELIMITER), 0, packetBytes, 0, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(NMQPacketizer.PACKET_DELIMITER), 0, packetBytes, 0, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(grossPacketSize), 0, packetBytes, 4, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(payloadCrc), 0, packetBytes, 8, 2);
-                Buffer.BlockCopy(payloadBytes, 0, packetBytes, NMQConstants.PAYLOAD_HEADER_SIZE, payloadBytes.Length);
+                Buffer.BlockCopy(payloadBytes, 0, packetBytes, NMQPacketizer.PACKET_HEADER_SIZE, payloadBytes.Length);
 
                 return packetBytes;
             }
@@ -46,10 +46,10 @@ namespace MemQueue.Library
 
                     var value = BitConverter.ToInt32(payloadDelimiterBytes, 0);
 
-                    if (value == NMQConstants.PAYLOAD_DELIMITER)
+                    if (value == NMQPacketizer.PACKET_DELIMITER)
                     {
                         Buffer.BlockCopy(packet.PayloadBuilder, offset, packet.PayloadBuilder, 0, packet.PayloadBuilderLength - offset);
-                        packet.PayloadBuilderLength = packet.PayloadBuilderLength - offset;
+                        packet.PayloadBuilderLength -= offset;
                         return;
                     }
                 }
@@ -75,7 +75,7 @@ namespace MemQueue.Library
 
                 packet.PayloadBuilderLength = packet.PayloadBuilderLength + packet.BufferLength;
 
-                while (packet.PayloadBuilderLength > NMQConstants.PAYLOAD_HEADER_SIZE) //[PayloadSize] and [CRC16]
+                while (packet.PayloadBuilderLength > NMQPacketizer.PACKET_HEADER_SIZE) //[PayloadSize] and [CRC16]
                 {
                     var payloadDelimiterBytes = new byte[4];
                     var payloadSizeBytes = new byte[4];
@@ -89,14 +89,14 @@ namespace MemQueue.Library
                     var grossPayloadSize = BitConverter.ToInt32(payloadSizeBytes, 0);
                     var expectedCRC16 = BitConverter.ToUInt16(expectedCRC16Bytes, 0);
 
-                    if (payloadDelimiter != NMQConstants.PAYLOAD_DELIMITER)
+                    if (payloadDelimiter != NMQPacketizer.PACKET_DELIMITER)
                     {
                         q.LogException(new Exception("Malformed payload packet, invalid delimiter."));
                         SkipPacket(q, ref packet);
                         continue;
                     }
 
-                    if (grossPayloadSize < NMQConstants.DEFAULT_MIN_MSG_SIZE || grossPayloadSize > NMQConstants.DEFAULT_MAX_MSG_SIZE)
+                    if (grossPayloadSize < 0 || grossPayloadSize > NMQPacketizer.PACKET_MAX_SIZE)
                     {
                         q.LogException(new Exception("Malformed payload packet, invalid length."));
                         SkipPacket(q, ref packet);
@@ -110,7 +110,7 @@ namespace MemQueue.Library
                         break;
                     }
 
-                    var actualCRC16 = CRC16.ComputeChecksum(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADER_SIZE, grossPayloadSize - NMQConstants.PAYLOAD_HEADER_SIZE);
+                    var actualCRC16 = CRC16.ComputeChecksum(packet.PayloadBuilder, NMQPacketizer.PACKET_HEADER_SIZE, grossPayloadSize - NMQPacketizer.PACKET_HEADER_SIZE);
 
                     if (actualCRC16 != expectedCRC16)
                     {
@@ -119,10 +119,10 @@ namespace MemQueue.Library
                         continue;
                     }
 
-                    var netPayloadSize = grossPayloadSize - NMQConstants.PAYLOAD_HEADER_SIZE;
+                    var netPayloadSize = grossPayloadSize - NMQPacketizer.PACKET_HEADER_SIZE;
                     var payloadBytes = new byte[netPayloadSize];
 
-                    Buffer.BlockCopy(packet.PayloadBuilder, NMQConstants.PAYLOAD_HEADER_SIZE, payloadBytes, 0, netPayloadSize);
+                    Buffer.BlockCopy(packet.PayloadBuilder, NMQPacketizer.PACKET_HEADER_SIZE, payloadBytes, 0, netPayloadSize);
 
                     var payloadBody = Decompress(payloadBytes);
 

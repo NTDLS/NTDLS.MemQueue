@@ -16,6 +16,16 @@ namespace MemQueue
         #region Public Properties.
 
         /// <summary>
+        /// The time in milliseconds to wait for an acknowledgement that a dispatched request has been processed.
+        /// </summary>
+        public int ProcessTimeout { get; set; } = NMQConstants.DEFAULT_PROCESS_TIMEOUT_MS;
+
+        /// <summary>
+        /// The time in milliseconds to wait for an acknowledgement that a dispatched request has been received.
+        /// </summary>
+        public int AckTimeout { get; set; } = NMQConstants.DEFAULT_ACK_TIMEOUT_MS;
+
+        /// <summary>
         /// User data, use as you will.
         /// </summary>
         public object Tag { get; set; }
@@ -567,7 +577,7 @@ namespace MemQueue
                         queue.Value.RemoveAll(o => now > o.ExpireTime);
                     }
 
-                    DateTime ackStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.ACK_TIMEOUT_MS);
+                    DateTime ackStaleTime = DateTime.UtcNow.AddMilliseconds(-AckTimeout);
                     lock (_commandAckEvents)
                     {
                         var acks = _commandAckEvents.Where(o => o.Value.CreatedDate < ackStaleTime);
@@ -579,7 +589,7 @@ namespace MemQueue
                         }
                     }
 
-                    DateTime processedStaleTime = DateTime.UtcNow.AddMilliseconds(-NMQConstants.PROCESS_TIMEOUT_MS);
+                    DateTime processedStaleTime = DateTime.UtcNow.AddMilliseconds(-ProcessTimeout);
                     lock (_processedEvents)
                     {
                         var acks = _processedEvents.Where(o => o.Value.CreatedDate < processedStaleTime);
