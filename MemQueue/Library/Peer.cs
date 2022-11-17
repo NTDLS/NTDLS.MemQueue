@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Net.Sockets;
 
 namespace MemQueue.Library
@@ -17,6 +16,5 @@ namespace MemQueue.Library
 
         public Socket Socket;
         public Packet Packet { get; set; } = new Packet();
-
     }
 }

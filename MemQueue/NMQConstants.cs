@@ -37,13 +37,7 @@
         Reject
     }
 
-    public enum PayloadSendAction
-    {
-        Process,
-        Skip
-    }
-
-    public enum PayloadReceiveAction
+    public enum PayloadInterceptAction
     {
         Process,
         Discard

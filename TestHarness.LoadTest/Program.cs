@@ -13,7 +13,7 @@ namespace TestHarness.LoadTest
         static void Main()
         {
             var client = new NMQClient();
-            client.OnExceptionOccured += Client_OnExceptionOccured;
+            client.OnExceptionOccured += (sender, exception) => { Console.WriteLine($"Exception {exception.Message}"); };
             client.OnNotificationReceived += Client_OnNotificationReceived;
             client.OnQueryReceived += Client_OnQueryReceived;
 
@@ -28,6 +28,7 @@ namespace TestHarness.LoadTest
                     var query = new NMQQuery("TestQueue", "Ping");
 
                     messagesSent++;
+
                     //Enqueue a query and wait for the reply.
                     client.QueryAsync(query).ContinueWith((t) =>
                     {
@@ -55,11 +56,6 @@ namespace TestHarness.LoadTest
             }
 
             client.Disconnect();
-        }
-
-        private static void Client_OnExceptionOccured(NMQBase sender, Exception exception)
-        {
-            Console.WriteLine($"EXCEPTION: {exception.Message}");
         }
 
         private static NMQQueryReplyResult Client_OnQueryReceived(NMQClient sender, NMQQuery query)

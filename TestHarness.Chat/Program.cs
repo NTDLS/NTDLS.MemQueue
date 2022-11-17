@@ -8,7 +8,7 @@ namespace TestHarness.Chat
         static void Main(string[] args)
         {
             var client = new NMQClient();
-            client.OnMessageReceived += Client_OnMessageReceived;
+            client.OnNotificationReceived += Client_OnMessageReceived;
             client.Connect("localhost");
 
             client.Subscribe("Chatroom");

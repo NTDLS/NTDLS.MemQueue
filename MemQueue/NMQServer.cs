@@ -9,7 +9,7 @@ using System.Threading;
 namespace MemQueue
 {
     /// <summary>
-    /// Server class that listens for clients and routes messages between them.
+    /// Server class that listens for client connections and routes messages between them.
     /// </summary>
     public class NMQServer : NMQBase
     {
@@ -31,7 +31,7 @@ namespace MemQueue
         public object ListenPort { get; private set; }
 
         /// <summary>
-        /// The number of commands that have been dispatched and have not been acknoledgled by a client.
+        /// The number of commands that have been dispatched and have not been acknowledged by a client.
         /// </summary>
         public int PresumedDeadCommandCount { get; private set; }
 
@@ -263,18 +263,55 @@ namespace MemQueue
         /// Allows excpetions to be logged.
         /// </summary>
         public event ExceptionOccuredEvent OnExceptionOccured;
+        /// <summary>
+        /// Allows excpetions to be logged.
+        /// </summary>
+        /// <param name="sender">The instance of the server which sent the event.</param>
+        /// <param name="exception">The exception which occured.</param>
         public delegate void ExceptionOccuredEvent(NMQServer sender, Exception exception);
 
         public event OnClientConnectEvent OnClientConnect;
+        /// <summary>
+        /// Triggered when a peer is connecting to the server.
+        /// </summary>
+        /// <param name="sender">The instance of the server which sent the event.</param>
+        /// <param name="socket">The socket of the remote peer.</param>
+        /// <returns>whether to accept or reject the connection.</returns>
         public delegate ClientConnectAction OnClientConnectEvent(NMQServer sender, Socket socket);
 
+        /// <summary>
+        /// Triggered before a message is received by the server
+        /// </summary>
         public event OnBeforeCommandReceiveEvent OnBeforeMessageReceive;
-        public delegate PayloadReceiveAction OnBeforeCommandReceiveEvent(NMQServer sender, NMQMessageBase message);
+        /// <summary>
+        /// Triggered before a message is received by the server
+        /// </summary>
+        /// <param name="sender">The instance of the server which sent the event.</param>
+        /// <param name="message">The message which is being recevied.</param>
+        /// <returns>Whether the message should be received and enqued or discarded.</returns>
+        public delegate PayloadInterceptAction OnBeforeCommandReceiveEvent(NMQServer sender, NMQMessageBase message);
 
+        /// <summary>
+        /// Triggered before a message is sent to a client.
+        /// </summary>
         public event OnBeforeCommandSendEvent OnBeforeMessageSend;
-        public delegate PayloadSendAction OnBeforeCommandSendEvent(NMQServer sender, NMQMessageBase message);
+        /// <summary>
+        /// Triggered before a message is sent to a client.
+        /// </summary>
+        /// <param name="sender">The instance of the server which sent the event.</param>
+        /// <param name="message">The message which is being sent.</param>
+        /// <returns>Whether the message should be sent or discarded.</returns>
+        public delegate PayloadInterceptAction OnBeforeCommandSendEvent(NMQServer sender, NMQMessageBase message);
 
+        /// <summary>
+        /// Triggered when an outstanding acknowledgement request expires.
+        /// </summary>
         public event OnCommandAcknowledgementExpiredEvent OnCommandAcknowledgementExpired;
+        /// <summary>
+        /// Triggered when an outstanding acknowledgement request expires.
+        /// </summary>
+        /// <param name="sender">The instance of the server which sent the event.</param>
+        /// <param name="message">The message which was waiting for acknowledgement.</param>
         public delegate void OnCommandAcknowledgementExpiredEvent(NMQServer sender, NMQMessageBase message);
 
         #endregion
@@ -546,18 +583,7 @@ namespace MemQueue
                         }
                     }
 
-                    if (BrodcastScheme == BrodcastScheme.Uniform)
-                    {
-                        BroadcastMessages_Uniform();
-                    }
-                    else if (BrodcastScheme == BrodcastScheme.FireAndForget)
-                    {
-                        BroadcastMessages_FireAndForget();
-                    }
-                    else
-                    {
-                        throw new Exception("Unknown broadcast scheme.");
-                    }
+                    BroadcastMessages_Scheme();
                 }
                 catch (Exception ex)
                 {
@@ -570,12 +596,7 @@ namespace MemQueue
             }
         }
 
-        /// <summary>
-        /// Send the next message to each subscribed peer. Wait until all of them have acknowledged the
-        /// processing of the message before moving to the next message in the queue. This is basically
-        /// the opposite of round-robin because every subscriber gets a copy.
-        /// </summary>
-        private void BroadcastMessages_Uniform()
+        private void BroadcastMessages_Scheme()
         {
             foreach (string queueName in GetAllSubscribedQueueNames())
             {
@@ -619,7 +640,7 @@ namespace MemQueue
                             if (peer.Socket.Connected)
                             {
                                 var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
-                                if (action == PayloadSendAction.Skip)
+                                if (action == PayloadInterceptAction.Discard)
                                 {
                                     //Skip sending to this client.
                                     peer.CurrentMessage.Sent = true;
@@ -627,10 +648,18 @@ namespace MemQueue
                                 }
                                 else
                                 {
-                                    //Create an process event so we can track whether this message was received before we remove it from the queue.
-                                    AddProcessedAckEvent(peer, payload);
-                                    peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
-                                    peer.CurrentMessage.Sent = true;
+                                    if (BrodcastScheme == BrodcastScheme.Uniform)
+                                    {
+                                        //Create an process event so we can track whether this message was received before we remove it from the queue.
+                                        AddProcessedAckEvent(peer, payload);
+                                        peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
+                                        peer.CurrentMessage.Sent = true;
+                                    }
+                                    else if (BrodcastScheme == BrodcastScheme.FireAndForget)
+                                    {
+                                        peer.CurrentMessage.Errored = !SendAsync(peer.Socket, payload);
+                                        peer.CurrentMessage.Acknowledged = !peer.CurrentMessage.Errored;
+                                    }
                                 }
                             }
                             else
@@ -654,97 +683,6 @@ namespace MemQueue
             }
         }
 
-        /// <summary>
-        /// Send each message to each subscribed peer as fast as possible. Don't even wait on the peer to acknowledged the receipt or processing of the message.
-        /// This isn't necessarily unreliable, but could overwhelm a peer if it gets behind in processing - which would lead to unreliability.
-        /// </summary>
-        private void BroadcastMessages_FireAndForget()
-        {
-            var erroredSockets = new List<Socket>();
-
-            foreach (string queueName in GetAllSubscribedQueueNames())
-            {
-                if (_queues.ContainsKey(queueName) == false)
-                {
-                    continue; //The queue does not exist.
-                }
-
-                var queue = _queues[queueName];
-                if ((queue?.Count ?? 0) == 0)
-                {
-                    continue; //The queue is empty.
-                }
-
-                var peers = GetSubscriptionPeers(queueName);
-                if ((peers?.Count ?? 0) == 0)
-                {
-                    if (DoNotQueueWhenNoConsumers)
-                    {
-                        queue.Clear();
-                    }
-                    continue; //No consumers for the current queue.
-                }
-
-                int messagesSent = -1;
-
-                while (queue.Count > 0 && messagesSent != 0)
-                {
-                    var topMessage = queue.Peek();
-
-                    messagesSent = 0;
-                    foreach (var peer in peers)
-                    {
-                        try
-                        {
-                            var payload = new NMQCommand()
-                            {
-                                Message = topMessage,
-                                CommandType = PayloadCommandType.ProcessMessage
-                            };
-
-                            if (peer.Socket.Connected)
-                            {
-                                var action = OnBeforeMessageSend?.Invoke(this, payload.Message);
-
-                                if (action == PayloadSendAction.Skip)
-                                {
-                                    continue; //Skip sending to this client.
-                                }
-
-                                //Create an ACK event so we can track whether this message was received.
-                                AddCommandAckEvent(peer, payload);
-                                SendAsync(peer.Socket, payload);
-
-                                messagesSent++;
-                            }
-                        }
-                        catch (SocketException)
-                        {
-                            erroredSockets.Add(peer.Socket);
-                        }
-                        catch (Exception ex)
-                        {
-                            LogException(ex);
-                        }
-                    }
-
-                    if (messagesSent > 0)
-                    {
-                        lock (this) queue.Dequeue();
-                    }
-                }
-            }
-
-            while (erroredSockets.Count > 0)
-            {
-                lock (this)
-                {
-                    CleanupConnection(erroredSockets[0]);
-                    erroredSockets.RemoveAt(0);
-                }
-            }
-        }
-
         #endregion
 
         #region Command Packet Handler.
@@ -757,8 +695,8 @@ namespace MemQueue
 
                 var action = OnBeforeMessageReceive?.Invoke(this, payload.Message);
 
-                //The custom even henalder said to drop the command. Ablige...
-                if (action == PayloadReceiveAction.Discard)
+                //The custom even handler said to drop the command. Ablige...
+                if (action == PayloadInterceptAction.Discard)
                 {
                     return;
                 }

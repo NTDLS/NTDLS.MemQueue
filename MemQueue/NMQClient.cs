@@ -54,7 +54,7 @@ namespace MemQueue
 
         private Dictionary<string, NMQWaitEvent> _ackWaitEvents = new Dictionary<string, NMQWaitEvent>();
         private bool _continueRunning = false;
-        private Socket _peerSocket;
+        private Peer _peer; //The connection to the server.
         private AsyncCallback _onDataReceivedCallback;
         private IPAddress _serverIpAddress;
         private int _serverPort;
@@ -74,60 +74,110 @@ namespace MemQueue
         /// Allows excpetions to be logged.
         /// </summary>
         public event ExceptionOccuredEvent OnExceptionOccured;
+        /// <summary>
+        /// Allows excpetions to be logged.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="exception">The exception which occured.</param>
         public delegate void ExceptionOccuredEvent(NMQBase sender, Exception exception);
 
         /// <summary>
         /// Receives replies to a query which were sent to the queue [Query(...)].
         /// </summary>
         public event QueryReplyReceivedEvent OnQueryReplyReceived;
+        /// <summary>
+        /// Receives replies to a query which were sent to the queue [Query(...)].
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="reply">The reply message.</param>
+        /// <param name="hasAssociatedOpenQuery">Whether the reply is in response to an open query request by this instance of the client.</param>
         public delegate void QueryReplyReceivedEvent(NMQClient sender, NMQReply reply, bool hasAssociatedOpenQuery);
 
         /// <summary>
         /// Receives queries which were sent to the queue via [Query(...)], if subscribed.
         /// </summary>
         public event QueryReceivedEvent OnQueryReceived;
+        /// <summary>
+        /// /// Receives queries which were sent to the queue via [Query(...)], if subscribed.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="query">The query which was received.</param>
+        /// <returns></returns>
         public delegate NMQQueryReplyResult QueryReceivedEvent(NMQClient sender, NMQQuery query);
 
         /// <summary>
         /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
         /// </summary>
         public event NotificationReceivedEvent OnNotificationReceived;
+        /// <summary>
+        /// Receives messages which were sent to the queue via [EnqueueMessage(...)].
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="notification">The notification which was received.</param>
         public delegate void NotificationReceivedEvent(NMQClient sender, NMQNotification notification);
 
         /// <summary>
         /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
         /// </summary>
         public event ConnectedEvent OnConnected;
-        public delegate void ConnectedEvent();
+        /// <summary>
+        /// Notify when the client connects to the server. The even is also called on subsequent automatically reconnects.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        public delegate void ConnectedEvent(NMQClient sender);
 
         /// <summary>
         /// Notify when the client disconnects from the server.
         /// </summary>
         public event DisconnectedEvent OnDisconnected;
+        /// <summary>
+        /// Notify when the client disconnects from the server.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
         public delegate void DisconnectedEvent(NMQClient sender);
 
         /// <summary>
         /// Notify when an item is enqueued by this client.
         /// </summary>
         public event EnqueuedEvent OnEnqueued;
+        /// <summary>
+        /// Notify when an item is enqueued by this client.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="item">The item which was enqueued</param>
         public delegate void EnqueuedEvent(NMQClient sender, NMQMessageBase item);
 
         /// <summary>
         /// Notify when a queue is subscribed to by this client.
         /// </summary>
         public event QueueSubscribedEvent OnQueueSubscribed;
+        /// <summary>
+        /// Notify when a queue is subscribed to by this client.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="queueName">The name of the queue which was subscribed.</param>
         public delegate void QueueSubscribedEvent(NMQClient sender, string queueName);
 
         /// <summary>
         /// Notify when a queue subscription is removed by this client.
         /// </summary>
         public event QueueUnsubscribedEvent OnQueueUnsubscribed;
+        /// <summary>
+        /// Notify when a queue subscription is removed by this client.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event.</param>
+        /// <param name="queueName">The name of the queue which was unsubscribed.</param>
         public delegate void QueueUnsubscribedEvent(NMQClient sender, string queueName);
 
         /// <summary>
         /// Notify when a queue is cleared by this client.
         /// </summary>
         public event QueueClearedEvent OnQueueCleared;
+        /// <summary>
+        /// Notify when a queue is cleared by this client.
+        /// </summary>
+        /// <param name="sender">The instance of the client that send the event</param>
+        /// <param name="queueName">The name of the queue that was cleared.</param>
         public delegate void QueueClearedEvent(NMQClient sender, string queueName);
 
         #endregion
@@ -236,10 +286,10 @@ namespace MemQueue
 
             try
             {
-                _peerSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                _peer = new Peer(new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp));
 
-                _peerSocket.Connect(new IPEndPoint(ipAddress, port));
-                if (_peerSocket != null && _peerSocket.Connected)
+                _peer.Socket.Connect(new IPEndPoint(ipAddress, port));
+                if (_peer.Socket != null && _peer.Socket.Connected)
                 {
                     var payload = new NMQCommand()
                     {
@@ -255,25 +305,27 @@ namespace MemQueue
 
                     SendAsync(messagePacket);
 
-                    WaitForData(new Peer(_peerSocket));
+                    WaitForData(_peer);
 
                     if (waitEvent.WaitOne(NMQConstants.ACK_TIMEOUT_MS) == false)
                     {
                         lock (_ackWaitEvents) _ackWaitEvents.Remove($"{waitEvent.MessageId}");
-                        _peerSocket?.Dispose();
-                        _peerSocket = null;
+                        _peer?.Socket?.Dispose();
+                        if (_peer != null) _peer.Socket = null;
+                        _peer = null;
                         return false;
                     }
 
-                    OnConnected?.Invoke();
+                    OnConnected?.Invoke(this);
 
                     return true;
                 }
             }
             catch
             {
-                _peerSocket?.Dispose();
-                _peerSocket = null;
+                _peer?.Socket?.Dispose();
+                if (_peer != null) _peer.Socket = null;
+                _peer = null;
             }
 
             return false;
@@ -302,9 +354,9 @@ namespace MemQueue
             try
             {
                 TCPSendQueueDepth++;
-                if (_peerSocket.Connected)
+                if (_peer?.Socket?.Connected == true)
                 {
-                    _peerSocket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), _peerSocket);
+                    _peer.Socket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(SendCallback), _peer.Socket);
                 }
             }
             catch (Exception ex)
@@ -335,18 +387,19 @@ namespace MemQueue
         {
             try
             {
-                if (_peerSocket != null)
+                if (_peer?.Socket != null)
                 {
                     OnDisconnected?.Invoke(this);
 
                     try
                     {
-                        _peerSocket?.Shutdown(SocketShutdown.Both);
+                        _peer?.Socket?.Shutdown(SocketShutdown.Both);
                     }
                     finally
                     {
-                        _peerSocket?.Close();
-                        _peerSocket?.Dispose();
+                        _peer?.Socket?.Close();
+                        _peer?.Socket?.Dispose();
+                        _peer = null;
                     }
                 }
             }
@@ -371,7 +424,7 @@ namespace MemQueue
                 //Discard.
             }
 
-            _peerSocket = null;
+            _peer = null;
         }
 
         private void MonitorThreadProc(object data)
@@ -399,7 +452,7 @@ namespace MemQueue
 
                         try
                         {
-                            if (_peerSocket == null || _peerSocket.Connected == false)
+                            if (_peer?.Socket == null || _peer?.Socket.Connected == false)
                             {
                                 if (Connect(_serverIpAddress, _serverPort, false))
                                 {
@@ -509,7 +562,7 @@ namespace MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_peerSocket == null || _peerSocket.Connected == false)
+            if (_peer?.Socket == null || _peer?.Socket?.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -586,7 +639,7 @@ namespace MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_peerSocket == null || _peerSocket.Connected == false)
+            if (_peer?.Socket == null || _peer?.Socket?.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -649,7 +702,7 @@ namespace MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_peerSocket == null || _peerSocket.Connected == false)
+            if (_peer?.Socket == null || _peer?.Socket?.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -691,7 +744,7 @@ namespace MemQueue
                 throw new Exception("No queue name was specified.");
             }
 
-            if (_peerSocket == null || _peerSocket.Connected == false)
+            if (_peer?.Socket == null || _peer?.Socket?.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -755,7 +808,7 @@ namespace MemQueue
         /// <returns>True upon successful enqueue.</returns>
         private bool EnqueueEx(NMQCommand payload)
         {
-            if (_peerSocket == null || _peerSocket.Connected == false)
+            if (_peer?.Socket == null || _peer?.Socket?.Connected == false)
             {
                 throw new Exception("The client is not connected to a server.");
             }
@@ -815,9 +868,9 @@ namespace MemQueue
                     _subscribedQueues.Add(queueName);
                 }
 
-                if (_peerSocket != null && _peerSocket.Connected)
+                if (_peer.Socket != null && _peer?.Socket?.Connected == true)
                 {
-                    _peerSocket.Send(messagePacket);
+                    _peer.Socket.Send(messagePacket);
                     OnQueueSubscribed?.Invoke(this, queueName);
                 }
             }
@@ -850,9 +903,9 @@ namespace MemQueue
             {
                 _subscribedQueues.Remove(queueName);
 
-                if (_peerSocket != null && _peerSocket.Connected)
+                if (_peer.Socket != null && _peer?.Socket?.Connected == true)
                 {
-                    _peerSocket.Send(messagePacket);
+                    _peer.Socket.Send(messagePacket);
                     OnQueueUnsubscribed?.Invoke(this, queueName);
                 }
             }
@@ -883,9 +936,9 @@ namespace MemQueue
 
             try
             {
-                if (_peerSocket != null && _peerSocket.Connected)
+                if (_peer.Socket != null && _peer?.Socket?.Connected == true)
                 {
-                    _peerSocket.Send(messagePacket);
+                    _peer.Socket.Send(messagePacket);
                     OnQueueCleared?.Invoke(this, queueName);
                 }
             }
