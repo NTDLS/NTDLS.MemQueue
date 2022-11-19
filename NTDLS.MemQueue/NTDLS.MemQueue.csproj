@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>NTDLS.MemQueue</Title>
     <Copyright>Copyright © 2023 NetworkDLS</Copyright>
@@ -17,5 +17,9 @@
     <FileVersion>1.0.1</FileVersion>
     <version>1.0.1</version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="protobuf-net" Version="3.1.25" />
+  </ItemGroup>
 
 </Project>

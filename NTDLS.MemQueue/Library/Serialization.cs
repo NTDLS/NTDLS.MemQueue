@@ -1,24 +1,25 @@
-﻿using System;
+﻿using ProtoBuf;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace NTDLS.MemQueue.Library
 {
     public static class Serialization
     {
-        public static byte[] ToByteArray(Object obj)
+        public static byte[] ToByteArray(object obj)
         {
-            using var ms = new MemoryStream();
-            (new BinaryFormatter()).Serialize(ms, obj);
-            return ms.ToArray();
+            if (obj == null) return null;
+
+            using var stream = new MemoryStream();
+            Serializer.Serialize(stream, obj);
+            return stream.ToArray();
         }
 
         public static T ToObject<T>(byte[] arrBytes)
         {
-            using var memStream = new MemoryStream();
-            memStream.Write(arrBytes, 0, arrBytes.Length);
-            memStream.Seek(0, SeekOrigin.Begin);
-            return (T)(new BinaryFormatter()).Deserialize(memStream);
+            using var stream = new MemoryStream();
+            stream.Write(arrBytes, 0, arrBytes.Length);
+            stream.Seek(0, SeekOrigin.Begin);
+            return Serializer.Deserialize<T>(stream);
         }
     }
 }
