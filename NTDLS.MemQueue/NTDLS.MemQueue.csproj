@@ -9,17 +9,24 @@
     <PackageProjectUrl>https://github.com/NTDLS/NTDLS.MemQueue</PackageProjectUrl>
     <RepositoryUrl>https://github.com/NTDLS/NTDLS.MemQueue</RepositoryUrl>
     <PackageTags>ipc;message-queue;inter-process-communication;tcp-ip;message-broker;mq;</PackageTags>
-    <PackageReleaseNotes>Initial release.</PackageReleaseNotes>
+    <PackageReleaseNotes>Migrated to net7.</PackageReleaseNotes>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Company>NetworkDLS</Company>
-    <AssemblyVersion>1.0.1</AssemblyVersion>
-    <FileVersion>1.0.1</FileVersion>
-    <version>1.0.1</version>
+    <AssemblyVersion>2.0.0</AssemblyVersion>
+    <FileVersion>2.0.0</FileVersion>
+    <VersionPrefix>2.0.0</VersionPrefix>
+    <version></version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="protobuf-net" Version="3.1.25" />
   </ItemGroup>
-
 </Project>
