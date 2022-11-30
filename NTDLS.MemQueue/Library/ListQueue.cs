@@ -6,19 +6,22 @@ namespace NTDLS.MemQueue.Library
     {
         public void Enqueue(T item)
         {
-            base.Add(item);
+            lock(this) base.Add(item);
         }
 
         public T Dequeue()
         {
-            var t = base[0];
-            base.RemoveAt(0);
-            return t;
+            lock (this)
+            {
+                var t = base[0];
+                base.RemoveAt(0);
+                return t;
+            }
         }
 
         public T Peek()
         {
-            return base[0];
+            lock (this) return base[0];
         }
     }
 }

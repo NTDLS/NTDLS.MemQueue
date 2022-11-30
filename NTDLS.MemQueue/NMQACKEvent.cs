@@ -12,6 +12,7 @@ namespace NTDLS.MemQueue
         /// <summary>
         /// The command that we are waiting on an acknowledgement for.
         /// </summary>
+        /// 
         public NMQCommand Command { get; set; }
         /// <summary>
         /// The date/time that the event was created.
@@ -20,12 +21,17 @@ namespace NTDLS.MemQueue
 
         private string _key;
 
+        public static string MakeKey(Guid peerId, Guid messageId)
+        {
+            return $"{{{peerId}:{messageId}}}".Replace("-", "").ToLower();
+        }
+
         public NMQACKEvent(Peer peer, NMQCommand command)
         {
             CreatedDate = DateTime.UtcNow;
             Peer = peer;
             Command = command;
-            _key = $"[{Peer.PeerId}:{Command.Message.MessageId}]".Replace("-", "");
+            _key = MakeKey(Peer.PeerId, Command.Message.MessageId);
         }
 
         /// <summary>

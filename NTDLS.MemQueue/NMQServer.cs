@@ -1,6 +1,7 @@
 ﻿using NTDLS.MemQueue.Library;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -60,6 +61,22 @@ namespace NTDLS.MemQueue
         /// </summary>
         public int TCPSendQueueDepth { get; private set; }
 
+        public int ListenBacklog
+        {
+            get
+            {
+                return _listenBacklog;
+            }
+            set
+            {
+                if (_listenSocket != null)
+                {
+                    throw new Exception("Listen backlog cannot be changed once the server is started.");
+                }
+                _listenBacklog = value;
+            }
+        }
+
         private BrodcastScheme _brodcastScheme = BrodcastScheme.NotSet;
         public BrodcastScheme BrodcastScheme
         {
@@ -84,7 +101,7 @@ namespace NTDLS.MemQueue
         private Dictionary<string, NMQACKEvent> _commandAckEvents = new Dictionary<string, NMQACKEvent>();
         private Dictionary<string, NMQACKEvent> _processedEvents = new Dictionary<string, NMQACKEvent>();
         private bool _continueRunning = false;
-        private readonly int _listenBacklog = NMQConstants.DEFAULT_TCPIP_LISTEN_SIZE;
+        private int _listenBacklog = NMQConstants.DEFAULT_TCPIP_LISTEN_SIZE;
         private Socket _listenSocket;
         private readonly List<Peer> _peers = new List<Peer>();
         private AsyncCallback _onDataReceivedCallback;
@@ -98,11 +115,6 @@ namespace NTDLS.MemQueue
 
         public NMQServer()
         {
-        }
-
-        public NMQServer(int listenBacklog)
-        {
-            this._listenBacklog = listenBacklog;
         }
 
         #endregion
@@ -436,6 +448,7 @@ namespace NTDLS.MemQueue
                 {
                     peer.Packet.BufferLength = peer.Socket.EndReceive(asyn);
 
+                    //Disonnect peer on the receipt of zero bytes.
                     if (peer.Packet.BufferLength == 0)
                     {
                         CleanupConnection(peer.Socket);
@@ -450,6 +463,10 @@ namespace NTDLS.MemQueue
                     }
 
                     WaitForData(peer);
+                }
+                else
+                {
+                    CleanupConnection(peer.Socket);
                 }
             }
             catch (ObjectDisposedException)
@@ -692,7 +709,7 @@ namespace NTDLS.MemQueue
                 //The message has been sent to all peers, remove it from the queue.
                 if (peers.Select(o => o.CurrentMessage).Where(o => o.IsComplete == false).Any() == false)
                 {
-                    lock (this) queue.Dequeue();
+                    queue.Dequeue();
                     peers.ForEach(o => o.CurrentMessage = null);
                 }
             }
@@ -730,23 +747,29 @@ namespace NTDLS.MemQueue
                 //The client is acknowledging the receipt of a command.
                 else if (payload.CommandType == PayloadCommandType.CommandAck)
                 {
-                    var key = $"{peer.PeerId}-{payload.Message.MessageId}";
+                    var key = NMQACKEvent.MakeKey(peer.PeerId, payload.Message.MessageId);
                     if (_commandAckEvents.ContainsKey(key))
                     {
-                        lock (_commandAckEvents) _commandAckEvents.Remove(key);
+                        lock (_commandAckEvents)
+                        {
+                            _commandAckEvents.Remove(key);
+                        }
                     }
                     else
                     {
                         //Client... what are you ack'ing?
                     }
                 }
-                //The client is acknowledging the receipt of a command.
+                //The client is acknowledging that it has processed a message.
                 else if (payload.CommandType == PayloadCommandType.ProcessedAck)
                 {
-                    var key = $"{peer.PeerId}-{payload.Message.MessageId}";
+                    var key = NMQACKEvent.MakeKey(peer.PeerId, payload.Message.MessageId);
                     if (_processedEvents.ContainsKey(key))
                     {
-                        lock (_processedEvents) _processedEvents.Remove(key);
+                        lock (_processedEvents)
+                        {
+                            _processedEvents.Remove(key);
+                        }
                     }
                     else
                     {
