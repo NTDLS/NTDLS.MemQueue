@@ -1,5 +1,5 @@
 # MemQueue
-In memory non-persistent message queue with notifications/messages, query/reply support and several message boradcast schemes. Intended for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
+In memory non-persistent message queue with notifications/messages, query/reply support and several message broadcast schemes. Intended for inter-process-communication, queuing, load-balancing and buffering over TCP/IP.
 
 >**Running the server:**
 >
