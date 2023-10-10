@@ -9,14 +9,13 @@
     <PackageProjectUrl>https://github.com/NTDLS/NTDLS.MemQueue</PackageProjectUrl>
     <RepositoryUrl>https://github.com/NTDLS/NTDLS.MemQueue</RepositoryUrl>
     <PackageTags>ipc;message-queue;inter-process-communication;tcp-ip;message-broker;mq;</PackageTags>
-    <PackageReleaseNotes>Changed queue locking to be much more granular.
-Added cleanup of outstanding messages on peer disconnect.</PackageReleaseNotes>
+    <PackageReleaseNotes>License update.</PackageReleaseNotes>
     <RepositoryType>git</RepositoryType>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Company>NetworkDLS</Company>
-    <AssemblyVersion>2.0.2</AssemblyVersion>
-    <FileVersion>2.0.2</FileVersion>
-    <VersionPrefix>2.0.2</VersionPrefix>
+    <AssemblyVersion>2.0.3</AssemblyVersion>
+    <FileVersion>2.0.3</FileVersion>
+    <VersionPrefix>2.0.3</VersionPrefix>
     <version></version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>Logo.png</PackageIcon>
