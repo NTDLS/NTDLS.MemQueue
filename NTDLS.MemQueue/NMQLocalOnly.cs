@@ -5,7 +5,7 @@ using System.Threading;
 namespace NTDLS.MemQueue
 {
     /// <summary>
-    /// For local IPC, this class instanciates an in-process server if one is not running. If the instance
+    /// For local IPC, this class Instantiates an in-process server if one is not running. If the instance
     /// running the server terminates, one of the connected clients will take over the role of server - however,
     /// messages queued at the server will be lost.
     /// </summary>
@@ -27,7 +27,7 @@ namespace NTDLS.MemQueue
         public NMQClient Client { get; private set; }
 
         /// <summary>
-        /// If there is no server running, one will be instanciated - if that occurs, this will be set.
+        /// If there is no server running, one will be Instantiated - if that occurs, this will be set.
         /// </summary>
         public NMQServer Server { get; private set; }
 
@@ -104,7 +104,7 @@ namespace NTDLS.MemQueue
         {
             Port = port;
 
-            InstanciateClient();
+            InstantiateClient();
 
             _mutex = new Mutex(true, $"NMQLocalOnly:{port}", out bool createdNew);
             _isLocalServer = createdNew;
@@ -112,13 +112,13 @@ namespace NTDLS.MemQueue
 
             if (_isLocalServer)
             {
-                InstanciateServer();
+                InstantiateServer();
             }
 
             Client.Connect(IPAddress.Parse("127.0.0.1"), port);
         }
 
-        private void InstanciateServer()
+        private void InstantiateServer()
         {
             if (_serverCallback != null)
             {
@@ -132,7 +132,7 @@ namespace NTDLS.MemQueue
             Server.Start(Port);
         }
 
-        private void InstanciateClient()
+        private void InstantiateClient()
         {
             if (_clientCallback != null)
             {
@@ -162,7 +162,7 @@ namespace NTDLS.MemQueue
 
             if (_isLocalServer)
             {
-                InstanciateServer();
+                InstantiateServer();
             }
         }
 

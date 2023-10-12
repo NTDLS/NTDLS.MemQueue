@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>NTDLS.MemQueue</Title>
     <Copyright>Copyright © 2023 NetworkDLS</Copyright>
@@ -9,13 +9,15 @@
     <PackageProjectUrl>https://github.com/NTDLS/NTDLS.MemQueue</PackageProjectUrl>
     <RepositoryUrl>https://github.com/NTDLS/NTDLS.MemQueue</RepositoryUrl>
     <PackageTags>ipc;message-queue;inter-process-communication;tcp-ip;message-broker;mq;</PackageTags>
-    <PackageReleaseNotes>License update.</PackageReleaseNotes>
+    <PackageReleaseNotes>
+      Added net 6, 7, documentation and fixed reconnect for local-only.
+    </PackageReleaseNotes>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Company>NetworkDLS</Company>
-    <AssemblyVersion>2.0.3</AssemblyVersion>
-    <FileVersion>2.0.3</FileVersion>
-    <VersionPrefix>2.0.3</VersionPrefix>
+    <AssemblyVersion>2.1.0</AssemblyVersion>
+    <FileVersion>2.1.0</FileVersion>
+    <VersionPrefix>2.1.0</VersionPrefix>
     <version></version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>Logo.png</PackageIcon>

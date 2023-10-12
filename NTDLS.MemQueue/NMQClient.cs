@@ -257,7 +257,6 @@ namespace NTDLS.MemQueue
             return Connect(ipAddress, port, true);
         }
 
-
         /// <summary>
         /// Connect to the server.
         /// </summary>
@@ -531,6 +530,11 @@ namespace NTDLS.MemQueue
                     Packetizer.DissasemblePacketData(this, peer, peer.Packet, PacketPayloadHandler);
 
                     WaitForData(peer);
+                }
+                else
+                {
+                    CloseSocket();
+                    return;
                 }
             }
             catch (ObjectDisposedException)
