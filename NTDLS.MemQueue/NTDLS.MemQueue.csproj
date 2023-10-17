@@ -10,14 +10,15 @@
     <RepositoryUrl>https://github.com/NTDLS/NTDLS.MemQueue</RepositoryUrl>
     <PackageTags>ipc;message-queue;inter-process-communication;tcp-ip;message-broker;mq;</PackageTags>
     <PackageReleaseNotes>
-      Added net 6, 7, documentation and fixed reconnect for local-only.
+      Author revision.
     </PackageReleaseNotes>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Authors>NetworkDLS</Authors>
     <Company>NetworkDLS</Company>
-    <AssemblyVersion>2.1.0</AssemblyVersion>
-    <FileVersion>2.1.0</FileVersion>
-    <VersionPrefix>2.1.0</VersionPrefix>
+    <AssemblyVersion>2.1.1</AssemblyVersion>
+    <FileVersion>2.1.1</FileVersion>
+    <VersionPrefix>2.1.1</VersionPrefix>
     <version></version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>Logo.png</PackageIcon>
