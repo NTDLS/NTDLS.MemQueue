@@ -2,7 +2,7 @@
 
 📦 Be sure to check out the (replacement) NuGet pacakge: https://www.nuget.org/packages/NTDLS.MemoryQueue
 
-## ❗ MemQueue has been rewritten and greatly simplified for stability, durability, performance, ease of use and maintainability. You can find the replacement at https://github.com/NTDLS/NTDLS.MemoryQueue.
+## ❗ MemQueue has been rewritten and greatly simplified for stability, durability, performance, ease of use and maintainability. You can find the replacement at https://github.com/NTDLS/NTDLS.MemoryQueue
 
 ## 🗃️ While we could have continued with this project, we ultimately decided to move to a new project because the framework is vastly different and we wanted to preserve the lower-level work that had been done here
 
